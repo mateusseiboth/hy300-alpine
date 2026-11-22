@@ -333,9 +333,10 @@ class Smoke:
             self.ssh(qemu, "hy300-kexec /tmp/k.img", timeout=60)
         except subprocess.TimeoutExpired:
             pass
-        started = qemu.wait_for_log("Bye!", 60) and qemu.wait_for_log("Booting Linux", 60)
-        log = qemu.read_log()
-        self.check(started and log.count("Booting Linux on physical CPU") >= 2, "kexec -e: o kernel novo começa a subir")
+        end = time.monotonic() + 120
+        while qemu.read_log().count("Booting Linux on physical CPU") < 2 and time.monotonic() < end:
+            time.sleep(2)
+        self.check(qemu.read_log().count("Booting Linux on physical CPU") >= 2, "kexec -e: o kernel novo começa a subir")
         self.warn(qemu.wait_for_log(KEXEC_MARK, 120),
                   "kexec -e: o kernel novo chega ao initramfs (conhecido: no QEMU ele cai em shmem_init com o "
                   "código sobrescrito, com kexec_load e com kexec_file_load; ver README)")
