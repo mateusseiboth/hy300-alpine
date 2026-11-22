@@ -1,0 +1,62 @@
+#!/bin/sh
+# Wi-Fi da recuperação.
+#
+# Uso: hy300-wifi status                 modo e estado
+#      hy300-wifi scan                   redes ao alcance (no modo ponto de acesso pode vir vazio)
+#      hy300-wifi connect NOME [SENHA]   acrescenta a rede (DHCP) e tenta conectar
+#      hy300-wifi reconnect              volta a procurar as redes conhecidas (sai do ponto de acesso)
+#      hy300-wifi ap                     abre o ponto de acesso próprio
+#
+# As redes acrescentadas valem na hora e ficam salvas em config/redes.conf na partição backup
+# (no modo de resgate, só na RAM).
+: "${HY300_LIB:=/usr/lib/hy300}"
+. "$HY300_LIB/common.sh"
+. "$HY300_LIB/network.sh"
+. "$HY300_LIB/persist.sh"
+# Só para os testes (tests/test_wifi_command.py).
+WIFI_WPA_CONF=${WIFI_WPA_CONF_OVERRIDE:-$WIFI_WPA_CONF}
+
+read_iface() {
+	cat "$HY300_RUN/wifi-iface" 2>/dev/null || echo wlan0
+}
+
+request_mode() {
+	echo "$1" >"$HY300_RUN/wifi-request"
+	echo "pedido enviado: $1 (acompanhe com hy300-wifi status)"
+}
+
+show_status() {
+	echo "modo: $(cat "$HY300_RUN/wifi-mode" 2>/dev/null)"
+	echo "estado: $(cat "$HY300_RUN/wifi-state" 2>/dev/null)"
+	echo "IP: $(read_iface_ip "$(read_iface)")"
+}
+
+# Uma rede por linha, da mais forte para a mais fraca: "  -40 dBm  Nome". Com o
+# wpa_supplicant no ar usa o scan dele; no modo ponto de acesso tenta o iw (pode vir vazio).
+scan_networks() {
+	iface=$(read_iface)
+	wpa_cli -p "$WIFI_WPA_CTRL" -i "$iface" scan >/dev/null 2>&1 && sleep 4 &&
+		wpa_cli -p "$WIFI_WPA_CTRL" -i "$iface" scan_results 2>/dev/null | build_scan_list && return
+	iw dev "$iface" scan 2>/dev/null | awk '/signal:/ { s = int($2) } /SSID: / { sub(/^[ \t]*SSID: /, ""); if ($0 != "") printf "0\t0\t%d\t-\t%s\n", s, $0 }' |
+		build_scan_list
+}
+
+# A rede vai para o wpa_supplicant.conf da RAM e, se houver a partição backup, para os
+# próximos boots também.
+connect_network() {
+	new_network=$(mktemp)
+	add_wifi_network "$new_network" "$1" "${2:-}" || { rm -f "$new_network"; return 1; }
+	cat "$new_network" >>"$WIFI_WPA_CONF"
+	save_wifi_block "$new_network"
+	rm -f "$new_network"
+	request_mode station
+}
+
+case "${1:-}" in
+status) show_status ;;
+scan) scan_networks ;;
+connect) [ -n "${2:-}" ] || { sed -n '2,13s/^# \{0,1\}//p' "$0"; exit 2; }; connect_network "$2" "${3:-}" ;;
+reconnect) request_mode station ;;
+ap) request_mode ap ;;
+*) sed -n '2,13s/^# \{0,1\}//p' "$0"; exit 2 ;;
+esac

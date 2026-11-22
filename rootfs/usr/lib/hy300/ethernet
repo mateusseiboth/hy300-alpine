@@ -1,0 +1,16 @@
+#!/bin/sh
+# Adaptadores Ethernet USB: DHCP em toda interface Ethernet que aparecer (inclusive depois do
+# boot) e ainda não tiver o udhcpc rodando.
+: "${HY300_LIB:=/usr/lib/hy300}"
+. "$HY300_LIB/common.sh"
+. "$HY300_LIB/network.sh"
+ETHERNET_SCAN_EVERY=5
+
+while :; do
+	for iface in $(find_ethernet_ifaces); do
+		is_dhcp_running "$iface" && continue
+		log_kmsg rede "DHCP em $iface"
+		start_dhcp "$iface"
+	done
+	sleep "$ETHERNET_SCAN_EVERY"
+done

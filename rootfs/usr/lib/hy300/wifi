@@ -1,0 +1,72 @@
+#!/bin/sh
+# Daemon do Wi-Fi (AIC8800D80). Modos, cada um uma função que devolve o próximo:
+#   station    wpa_supplicant com as redes conhecidas (a de casa com IP fixo, as outras com
+#              DHCP); sem conexão em WIFI_STATION_WAIT s, vai para ap.
+#   connected  acompanha a conexão; sem sinal por WIFI_LOST_LIMIT s, volta para station.
+#   ap         ponto de acesso próprio (hostapd + udhcpd em 192.168.50.1) até alguém pedir outra
+#              coisa pelo hy300-wifi.
+# Pedidos (hy300-wifi) chegam pelo arquivo /run/hy300/wifi-request: "station" ou "ap".
+: "${HY300_LIB:=/usr/lib/hy300}"
+. "$HY300_LIB/common.sh"
+. "$HY300_LIB/network.sh"
+WIFI_IFACE_WAIT=20
+WIFI_STATION_WAIT=45
+WIFI_LOST_LIMIT=180
+WIFI_CHECK_EVERY=5
+
+take_wifi_request() {
+	[ -e "$HY300_RUN/wifi-request" ] || return 1
+	cat "$HY300_RUN/wifi-request"
+	rm -f "$HY300_RUN/wifi-request"
+}
+
+run_mode_station() {
+	leave_ap_mode "$1"
+	pkill -x wpa_supplicant 2>/dev/null
+	ip link set "$1" up
+	start_wpa_supplicant "$1" "$WIFI_WPA_CONF" || { echo ap; return; }
+	run_station_attempt "$1" "$WIFI_STATION_WAIT" && { echo connected; return; }
+	log_kmsg wifi "nenhuma rede conhecida em $WIFI_STATION_WAIT s: ponto de acesso"
+	echo ap
+}
+
+run_mode_connected() {
+	log_kmsg wifi "$(cat "$HY300_RUN/wifi-state"), IP $(read_iface_ip "$1")"
+	lost=0
+	while :; do
+		request=$(take_wifi_request) && { echo "$request"; return; }
+		sleep "$WIFI_CHECK_EVERY"
+		[ "$(read_wpa_field "$1" wpa_state)" = COMPLETED ] && { lost=0; continue; }
+		lost=$((lost + WIFI_CHECK_EVERY))
+		write_wifi_state "sem sinal há $lost s"
+		[ "$lost" -ge "$WIFI_LOST_LIMIT" ] && { echo station; return; }
+	done
+}
+
+run_mode_ap() {
+	enter_ap_mode "$1" || { sleep 60; echo station; return; }
+	log_kmsg wifi "ponto de acesso aberto em $WIFI_AP_ADDRESS"
+	while :; do
+		request=$(take_wifi_request) && { echo "$request"; return; }
+		sleep 2
+	done
+}
+
+main() {
+	write_wifi_mode station
+	write_wifi_state "carregando o driver"
+	result=$(load_wifi_modules "$WIFI_FIRMWARE_DIR" 2>&1) || { write_wifi_state "FALHOU: $result"; log_kmsg wifi "FALHOU: $result"; return 1; }
+	iface=$(wait_for_wireless_iface "$WIFI_IFACE_WAIT") ||
+		{ write_wifi_state "FALHOU: sem interface sem fio em $WIFI_IFACE_WAIT s"; log_kmsg wifi "FALHOU: sem interface"; return 1; }
+	echo "$iface" >"$HY300_RUN/wifi-iface"
+	mode=station
+	while :; do
+		mode=$("run_mode_$mode" "$iface")
+		case "$mode" in
+		station | connected | ap) ;;
+		*) mode=station ;;
+		esac
+	done
+}
+
+main
