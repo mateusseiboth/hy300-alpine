@@ -1,0 +1,10 @@
+# Repositório público: imagens, rootfs, chaves, credenciais e firmware ficam fora
+# (~/hy300-work/alpine e /mnt/hd/hy300-alpine).
+*.img
+*.sqfs
+*.cpio*
+*.pub
+*.pyc
+__pycache__/
+build/
+out/
