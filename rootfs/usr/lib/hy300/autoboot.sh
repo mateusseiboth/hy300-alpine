@@ -10,7 +10,12 @@
 # shellcheck shell=sh
 
 : "${HY300_SYSFS_BLOCK:=/sys/class/block}"
+: "${HY300_BY_NAME:=/dev/block/by-name}"
+. "$HY300_LIB/watchdog.sh"
+. "$HY300_LIB/misc_mark.sh"
 : "${HY300_WAITKEY:=/usr/sbin/hy300-waitkey}"
+# Escrito pelo estágio 1 quando ele achou (e apagou) a marca de ficar na misc.
+: "${HY300_STAY_MARK_FILE:=/etc/hy300-stay}"
 AUTOBOOT_DELAY_DEFAULT=5
 STAY_FILE_NAME=hy300-ficar
 
@@ -28,6 +33,7 @@ read_android_slot() {
 
 # Motivo para ficar sem contagem; vazio se a contagem deve acontecer.
 read_stay_reason() {
+	[ -s "$HY300_STAY_MARK_FILE" ] && { cat "$HY300_STAY_MARK_FILE"; return; }
 	[ "$1" = 0 ] && { echo "hy300.autoboot=0 na cmdline"; return; }
 	[ "$2" = desconhecido ] && { echo "partição do Android desconhecida (sem hy300.slot)"; return; }
 	return 0
@@ -81,7 +87,17 @@ run_countdown() {
 	done
 }
 
+# O Alpine ficou pronto (init, watchdog e sshd no ar): zera o contador de boots falhos.
+mark_alpine_ready() {
+	[ -e "$HY300_BY_NAME/misc" ] || return 0
+	clear_boot_failures "$HY300_BY_NAME/misc" && log_kmsg autoboot "Alpine pronto: contador de boots falhos zerado"
+}
+
+# Antes do reboot o watchdog fica armado com o maior prazo, sem alimentar: se ele sobreviver ao
+# reset (não sabemos se o reset global o desliga), o kernel do Android o assume
+# (WATCHDOG_HANDLE_BOOT_ENABLED no 4.19 de fábrica) e um Android travado reinicia.
 boot_android() {
+	prepare_watchdog_for_handoff
 	sync
 	case "$1" in
 	recovery) hy300-reboot-recovery ;;

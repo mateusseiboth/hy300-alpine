@@ -16,6 +16,8 @@ Rodadas:
   normal     hy300.slot=recovery hy300.autoboot=2 sem tecla: reboot normal.
   tecla      hy300.slot=boot hy300.autoboot=20 e uma tecla durante a contagem: fica.
   panic      echo c >/proc/sysrq-trigger: reinicia sozinho em poucos segundos (panic=5).
+  marca      marca de ficar na misc: fica sem contagem, a marca some, o contador zera.
+  contador   contador de boots falhos em 3: vai uma vez para o Android e zera.
 
 Uso: smoke_qemu.py Image initramfs.cpio.xz dir_de_trabalho misc_de_fabrica.img chave.pub backup-alpine.img
 """
@@ -39,6 +41,9 @@ SECTOR = 512
 MISC_START, MISC_SECTORS = 10240, 8192
 BOOT_START, BOOT_SECTORS = 18432, 4096
 BACKUP_START = 55296
+STAY_MARK_OFFSET = 0x10000
+STAY_MARK = b"hy300-ficar\0\x01\0\0\0"
+BOOT_COUNTER_OFFSET = 0x10010
 CHUNK = 1 << 20
 BCB_SIZE = 2048
 BOOT_TIMEOUT = 300
@@ -212,10 +217,10 @@ class Smoke:
         print(("ok: " if condition else "FALHOU: ") + message, flush=True)
         return condition
 
-    def boot(self, name, cmdline, backup=None):
+    def boot(self, name, cmdline, backup=None, misc=None):
         disk = os.path.join(self.workdir, f"disk-{name}.img")
         self.boot_data = os.urandom(BOOT_SECTORS * SECTOR)
-        create_disk(disk, self.misc, self.boot_data, backup)
+        create_disk(disk, misc or self.misc, self.boot_data, backup)
         self.disk = disk
         return Qemu(self.image, self.initramfs, self.workdir, name, cmdline, disk)
 
@@ -353,6 +358,43 @@ class Smoke:
         finally:
             qemu.stop()
 
+    def build_misc_with(self, offset, data):
+        misc = bytearray(self.misc)
+        misc[offset:offset + len(data)] = data
+        return bytes(misc)
+
+    def read_disk_misc(self, disk, offset, size=16):
+        with open(disk, "rb") as f:
+            f.seek(MISC_START * SECTOR + offset)
+            return f.read(size)
+
+    def run_stay_mark(self):
+        """Marca de ficar na misc: fica sem contagem, a marca some e o contador zera (pronto)."""
+        misc = self.build_misc_with(STAY_MARK_OFFSET, STAY_MARK)
+        qemu = self.boot("marca", "hy300.slot=boot hy300.autoboot=3", misc=misc)
+        try:
+            stayed = qemu.wait_for_log("ficando no Alpine: marca na misc")
+            time.sleep(8)
+            self.check(stayed and "iniciando o Android" not in qemu.read_log(), "marca na misc: fica no Alpine sem contagem")
+        finally:
+            qemu.stop()
+        self.check(self.read_disk_misc(self.disk, STAY_MARK_OFFSET) == bytes(16), "marca apagada (uso único)")
+        self.check(self.read_disk_misc(self.disk, BOOT_COUNTER_OFFSET) == bytes(16), "contador de boots falhos zerado (pronto)")
+
+    def run_boot_counter(self):
+        """Três boots seguidos sem o Alpine ficar pronto: vai uma vez para o Android e zera."""
+        misc = self.build_misc_with(BOOT_COUNTER_OFFSET, b"hy300-boots\0\x03\0\0\0")
+        qemu = self.boot("contador", "hy300.slot=boot hy300.autoboot=0", misc=misc)
+        try:
+            exited = qemu.wait_for_exit(120)
+            log = qemu.read_log()
+            self.check(exited and "indo para o Android uma vez" in log and
+                       "reboot: Restarting system with command 'recovery'" in log,
+                       "contador em 3: vai para o Android pelo registrador")
+        finally:
+            qemu.stop()
+        self.check(self.read_disk_misc(self.disk, BOOT_COUNTER_OFFSET) == bytes(16), "contador zerado ao ir para o Android")
+
     def run_panic(self):
         """Panic (sysrq c) reinicia sozinho em poucos segundos (panic=5; o QEMU sai com -no-reboot)."""
         qemu = self.boot("panic", "hy300.slot=boot hy300.autoboot=0")
@@ -393,6 +435,8 @@ def main(image, initramfs, workdir, factory_misc, pubkey, backup):
     smoke.run_autoboot("normal", "hy300.slot=recovery hy300.autoboot=2", "reboot: Restarting system")
     smoke.run_key()
     smoke.run_panic()
+    smoke.run_stay_mark()
+    smoke.run_boot_counter()
     for warning in smoke.warnings:
         print("AVISO:", warning)
     print("ok: smoke-qemu" if not smoke.failures else f"smoke-qemu: {len(smoke.failures)} falha(s), logs em {workdir}")

@@ -82,7 +82,7 @@ unbind_network_devices() {
 run_kexec() {
 	log_kmsg kexec "executando o kernel de $image"
 	unbind_network_devices
-	prepare_watchdog_for_kexec
+	prepare_watchdog_for_handoff
 	sync
 	echo u >"$HY300_SYSRQ" 2>/dev/null
 	sync

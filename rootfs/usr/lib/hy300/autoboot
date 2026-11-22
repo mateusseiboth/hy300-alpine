@@ -13,6 +13,7 @@ stay() {
 }
 
 main() {
+	mark_alpine_ready
 	delay=$(read_autoboot_delay)
 	android=$(read_android_slot)
 	reason=$(read_stay_reason "$delay" "$android")

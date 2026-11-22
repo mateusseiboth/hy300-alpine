@@ -30,7 +30,9 @@ class AutobootMixin(ShellMixin):
     def env(self, cmdline="hy300.slot=boot", **extra):
         self.write("cmdline", cmdline + "\n")
         env = {"HY300_CMDLINE": self.path("cmdline"), "HY300_SYSFS_BLOCK": self.path("sys"),
-               "HY300_STAY_CMD": os.path.join(self.bin, "stay"), "HY300_WAITKEY": os.path.join(self.bin, "hy300-waitkey")}
+               "HY300_STAY_CMD": os.path.join(self.bin, "stay"),
+               "HY300_STAY_MARK_FILE": self.path("sem-marca"), "HY300_BY_NAME": self.path("sem-misc"),
+               "HY300_WATCHDOG_DEV": self.path("sem-watchdog"), "HY300_WAITKEY": os.path.join(self.bin, "hy300-waitkey")}
         env.update(extra)
         return env
 
@@ -60,6 +62,30 @@ class AutobootMixin(ShellMixin):
         r = self.sh('read_stay_reason 5 recovery', env=self.env())
         self.assertEqual(r.stdout.strip(), "")
 
+    def test_ready_clears_boot_failure_counter(self):
+        misc = bytearray(4 * 1024 * 1024)
+        misc[0x10010:0x10020] = b"hy300-boots\0\x02\0\0\0"
+        self.write("by-name/misc", bytes(misc))
+        self.waitkey("tecla")
+        env = self.env("hy300.slot=boot")
+        env["HY300_BY_NAME"] = self.path("by-name")
+        self.sh(f'sh "{AUTOBOOT}"', env=env)
+        with open(self.path("by-name/misc"), "rb") as f:
+            f.seek(0x10010)
+            self.assertEqual(f.read(16), bytes(16))
+        self.assertIn("pronto", self.kmsg())
+
+    def test_misc_mark_from_stage1_stays_without_countdown(self):
+        self.write("etc-hy300-stay", "marca na misc\n")
+        self.waitkey("tempo")
+        env = self.env("hy300.slot=boot hy300.autoboot=5")
+        env["HY300_STAY_MARK_FILE"] = self.path("etc-hy300-stay")
+        self.sh(f'sh "{AUTOBOOT}"', env=env)
+        log = self.fake_log()
+        self.assertIn("stay marca na misc", log)
+        self.assertFalse(any(line.startswith("hy300-waitkey") for line in log))
+        self.assertIn("ficando no Alpine: marca na misc", self.kmsg())
+
     def test_late_stay_reason_from_run_file(self):
         self.write("run/ficar", "")
         r = self.sh("read_late_stay_reason", env=self.env())
@@ -88,6 +114,7 @@ class AutobootMixin(ShellMixin):
         self.assertNotIn("stay", " ".join(log))
         screen = open(self.path("tty1")).read()
         self.assertIn("Iniciando o Android", screen)
+        self.assertTrue(os.path.exists(self.path("run/watchdog-off")), "watchdog preparado antes do Android")
 
     def test_no_key_boots_android_in_boot_with_normal_reboot(self):
         self.waitkey("tempo")

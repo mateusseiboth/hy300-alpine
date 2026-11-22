@@ -12,6 +12,10 @@
 # Nos dois: uma camada gravável em tmpfs por cima (overlayfs) e switch_root para o busybox init
 # do Alpine. /etc/hy300-mode diz o modo. A backup segue montada (só-leitura) em /media/backup.
 #
+# Antes de tudo, na misc (ver misc_mark.sh): a marca de "ficar" de uso único é apagada (e o Alpine
+# fica sem contagem), e o contador de boots falhos soma um. Se o Alpine não ficou pronto em
+# BOOT_FAILURE_LIMIT boots seguidos, vai uma vez para o Android (o contador zera).
+#
 # Se nem o núcleo montar: mensagem na tela e no pstore e, 60 s depois, reboot para o Android.
 # hy300.verify=0 na cmdline pula o SHA-256 (uns segundos a menos no boot).
 /bin/busybox mkdir -p /proc /sys /dev /tmp /mnt/backup /mnt/ro /mnt/rw /mnt/root
@@ -19,7 +23,13 @@
 export PATH=/bin
 FAIL_WAIT=60
 BACKUP_WAIT=10
+MISC_WAIT=10
+MISC_SECTORS=8192
+BOOT_FAILURE_LIMIT=3
 CORE=/rootfs.sqfs
+# shellcheck source=../rootfs/usr/lib/hy300/misc_mark.sh
+. /lib/hy300/misc_mark.sh
+stay_reason=
 
 mount -t proc proc /proc
 mount -t sysfs sysfs /sys
@@ -66,6 +76,16 @@ wait_for_partition() {
 	done
 }
 
+handle_misc() {
+	misc=$(wait_for_partition misc "$MISC_WAIT") || { log "misc: partição não encontrada"; return; }
+	[ "$(cat "/sys/class/block/$misc/size")" = "$MISC_SECTORS" ] || { log "misc: tamanho inesperado, intocada"; return; }
+	dev=/dev/$misc
+	is_stay_mark_present "$dev" && clear_stay_mark "$dev" && { stay_reason="marca na misc"; log "misc: marca de ficar achada e apagada"; }
+	attempt=$(register_boot_attempt "$dev" "$BOOT_FAILURE_LIMIT") || { log "misc: $attempt"; return; }
+	[ "$attempt" = android ] && { log "$BOOT_FAILURE_LIMIT boots seguidos sem o Alpine ficar pronto: indo para o Android uma vez"; boot_android; }
+	log "misc: boot $attempt desde o último Alpine pronto"
+}
+
 is_rootfs_valid() {
 	[ -f "$1" ] && [ -f "$1.sha256" ] || { echo "partição backup sem o Alpine"; return 1; }
 	[ "$(read_cmdline_value hy300.verify)" = 0 ] && return 0
@@ -107,12 +127,14 @@ move_mounts() {
 }
 
 log "início (partição $(read_cmdline_value hy300.slot))"
+handle_misc
 mode=completo
 rootfs=$(find_backup_rootfs) || { mode="resgate: $rootfs"; rootfs=$CORE; }
 reason=$(mount_root "$rootfs")
 [ -n "$reason" ] && [ "$rootfs" != "$CORE" ] && { log "backup: $reason"; undo_mounts; mode="resgate: $reason"; rootfs=$CORE; reason=$(mount_root "$CORE"); }
 [ -n "$reason" ] && fail "$reason"
 echo "$mode" >/mnt/root/etc/hy300-mode
+[ -n "$stay_reason" ] && echo "$stay_reason" >/mnt/root/etc/hy300-stay
 log "modo $mode; rootfs $rootfs montado, passando para o init do Alpine"
 move_mounts
 exec switch_root /mnt/root /sbin/init

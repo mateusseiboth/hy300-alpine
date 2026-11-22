@@ -53,8 +53,6 @@ RECOVERY_SIZE=113246208
 BOOT_SIZE=41943040
 BACKUP_SIZE=390070272
 CMDLINE="hy300.autoboot=$AUTOBOOT panic=5 console=tty0 fbcon=font:TER16x32"
-# Só a imagem da boot: panic e travamento voltam pela recovery (Android), sem laço na boot.
-BOOT_ONLY_CMDLINE="hy300.crash_to_recovery=1"
 
 IMAGE="$KOUT/arch/arm64/boot/Image"
 IMAGE_GZ="$BUILD/Image.gz"
@@ -202,6 +200,9 @@ build_initramfs() {
 		file /init $REPO/initramfs/init 755 0 0
 		file /bin/busybox $BUILD/rootfs/bin/busybox.static 755 0 0
 		file /bin/hy300-reboot-recovery $BUILD/bin/hy300-reboot-recovery 755 0 0
+		dir /lib 755 0 0
+		dir /lib/hy300 755 0 0
+		file /lib/hy300/misc_mark.sh $REPO/rootfs/usr/lib/hy300/misc_mark.sh 644 0 0
 		file /rootfs.sqfs $SQUASHFS 644 0 0
 	EOF
 	"$BUILD/gen_init_cpio" -t 0 "$BUILD/cpio.list" | xz --check=crc32 -9 -T1 >"$INITRAMFS"
@@ -216,7 +217,7 @@ build_image() {
 build_images() {
 	echo ">> imagens"
 	build_image "$FACTORY/recovery.img" "$OUT/recovery-alpine.img" "$IMAGE_GZ" recovery
-	build_image "$BOOT_REF" "$OUT/boot-alpine.img" "$IMAGE_GZ" boot "$BOOT_ONLY_CMDLINE"
+	build_image "$BOOT_REF" "$OUT/boot-alpine.img" "$IMAGE_GZ" boot
 	build_image "$FACTORY/recovery.img" "$OUT/recovery-alpine-image-crua.img" "$IMAGE" recovery
 }
 
@@ -238,10 +239,9 @@ verify_image() {
 	require_same "$check/second" "$check/like/second" "$img: resource de fábrica"
 	grep -qa 'snps,dwcmshc-sdhci' "$check/res/rk-kernel.dtb" || fail "$img: DT do resource sem o eMMC do U-Boot"
 	grep -q "hy300.slot=$slot " "$check/header.json" || fail "$img: cmdline sem hy300.slot=$slot"
-	[[ "$slot" == boot ]] || ! grep -q "hy300.crash_to_recovery" "$check/header.json" ||
-		fail "$img: hy300.crash_to_recovery fora da imagem da boot (laço na recovery)"
-	[[ "$slot" != boot ]] || grep -q "hy300.crash_to_recovery=1" "$check/header.json" ||
-		fail "$img: imagem da boot sem hy300.crash_to_recovery=1"
+	# Qualquer falha tem de voltar ao Alpine: nada de crash_to_recovery (o contador da misc
+	# corta o laço de um Alpine quebrado).
+	! grep -q "hy300.crash_to_recovery" "$check/header.json" || fail "$img: hy300.crash_to_recovery na cmdline"
 	sha256sum "$img" | sed "s|$OUT/||" >"$img.sha256"
 }
 

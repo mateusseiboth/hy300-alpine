@@ -34,12 +34,13 @@ wait_for_watchdog_exit() {
 	done
 }
 
-# Antes do kexec -e: o init não pode reabrir o watchdog (arquivo watchdog-off), o daemon sai
+# Antes de passar o aparelho a outro sistema (kexec -e, ou reboot para o Android): o init não
+# pode reabrir o watchdog (arquivo watchdog-off), o daemon sai
 # com o fechamento mágico ('V'), e o último prazo programado fica o maior possível, em modo de
 # reset (sem pré-timeout: no kernel novo ninguém atende a interrupção até o driver subir). Se o
 # driver conseguir parar o watchdog, o kernel novo sobe sem ele; se não, o kernel atual segue
 # alimentando até o kexec, e o kernel novo tem até ~89 s para assumir.
-prepare_watchdog_for_kexec() {
+prepare_watchdog_for_handoff() {
 	mkdir -p "$HY300_RUN"
 	: >"$HY300_RUN/watchdog-off"
 	for pid in $(pidof "$WATCHDOG_DAEMON"); do
