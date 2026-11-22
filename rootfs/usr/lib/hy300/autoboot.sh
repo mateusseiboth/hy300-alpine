@@ -61,11 +61,20 @@ build_countdown_text() {
 	printf '\n\n  Alpine: iniciando o Android em %s s.\n\n  Aperte qualquer tecla do teclado para ficar no Alpine.\n' "$1"
 }
 
-# Mostra a contagem e imprime "tecla" ou "tempo". Sem o hy300-waitkey, conta como "tempo".
+# Folga do limite duro em volta do hy300-waitkey: a contagem nunca passa de N + folga segundos.
+COUNTDOWN_SLACK=3
+
+# "tecla <código> <ms> <dispositivo>" do hy300-waitkey vira o motivo de ficar, para o log.
+build_key_reason() {
+	echo "$1" | awk '{ code = $2; ms = $3; $1 = $2 = $3 = ""; sub(/^ +/, ""); printf "tecla %s aos %s ms em %s\n", code, ms, $0 }'
+}
+
+# Mostra a contagem e imprime "tecla ..." (ver build_key_reason) ou "tempo". Sem o
+# hy300-waitkey, ou se ele não terminar no prazo, conta como "tempo".
 run_countdown() {
-	"$HY300_WAITKEY" "$1" 2>/dev/null | while read -r word; do
+	timeout "$(($1 + COUNTDOWN_SLACK))" "$HY300_WAITKEY" "$1" 2>/dev/null | while read -r word; do
 		case "$word" in
-		tecla*) echo tecla ;;
+		tecla*) build_key_reason "$word" ;;
 		tempo) echo tempo ;;
 		*) show_screen "$(build_countdown_text "$word")" ;;
 		esac

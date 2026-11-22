@@ -19,7 +19,10 @@ main() {
 	[ -n "$reason" ] && stay "$reason"
 	log_kmsg autoboot "contagem de $delay s; Android na partição $android"
 	result=$(run_countdown "$delay")
-	[ "$result" = tecla ] && stay tecla
+	log_kmsg autoboot "contagem terminou (t=$(read_uptime) s): ${result:-sem resposta do hy300-waitkey}"
+	case "$result" in
+	tecla*) stay "$result" ;;
+	esac
 	reason=$(read_late_stay_reason)
 	[ -n "$reason" ] && stay "$reason"
 	show_screen "$(printf '\n\n  Iniciando o Android...')"

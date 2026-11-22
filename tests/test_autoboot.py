@@ -8,6 +8,7 @@ hy300.slot=recovery ele está na boot (reboot normal).
 Rodar: python3 -I -m unittest discover -s tests
 """
 import os
+import time
 
 from shelltest import LIB_DIR, ShellMixin, make_suite
 
@@ -34,7 +35,7 @@ class AutobootMixin(ShellMixin):
         return env
 
     def waitkey(self, result):
-        word = "tecla 232" if result == "tecla" else result
+        word = "tecla 30 1200 2.4G Composite Devic" if result == "tecla" else result
         lines = "echo 2; echo 1; " + f"echo {word}"
         self.fake("hy300-waitkey", f'hy300-waitkey*) {lines}; [ {result} = tecla ] ;;')
 
@@ -95,11 +96,13 @@ class AutobootMixin(ShellMixin):
         self.assertIn("reboot ", log)
         self.assertNotIn("hy300-reboot-recovery ", log)
 
-    def test_key_press_stays(self):
+    def test_key_press_stays_and_logs_which_key_and_device(self):
         self.waitkey("tecla")
         self.sh(f'sh "{AUTOBOOT}"', env=self.env("hy300.slot=boot"))
         log = self.fake_log()
-        self.assertIn("stay tecla", log)
+        reason = "tecla 30 aos 1200 ms em 2.4G Composite Devic"
+        self.assertIn(f"stay {reason}", log)
+        self.assertIn(f"ficando no Alpine: {reason}", self.kmsg())
         self.assertFalse(any(line.startswith(("reboot", "hy300-reboot-recovery")) for line in log))
 
     def test_autoboot_zero_stays_without_countdown(self):
@@ -119,6 +122,13 @@ class AutobootMixin(ShellMixin):
         self.fake("hy300-reboot-recovery", 'hy300-reboot-recovery*) exit 1 ;;')
         self.sh(f'sh "{AUTOBOOT}"', env=self.env("hy300.slot=boot"))
         self.assertIn("stay falha ao reiniciar para o Android", self.fake_log())
+
+    def test_stuck_waitkey_is_cut_by_the_deadline(self):
+        self.fake("hy300-waitkey", 'hy300-waitkey*) echo 1; exec sleep 30 ;;')
+        start = time.monotonic()
+        self.sh(f'sh "{AUTOBOOT}"', env=self.env("hy300.slot=boot hy300.autoboot=1"))
+        self.assertLess(time.monotonic() - start, 10)
+        self.assertIn("hy300-reboot-recovery ", self.fake_log())
 
     def test_broken_waitkey_still_boots_android(self):
         self.fake("hy300-waitkey", 'hy300-waitkey*) exit 127 ;;')
