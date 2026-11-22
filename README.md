@@ -59,11 +59,12 @@ Nos dois modos o rootfs fica comprimido na RAM com um tmpfs gravável por cima (
 
 | Item | Estado |
 |---|---|
-| Build, testes no host (193), teste de fumaça no QEMU | passando (ver "Testes") |
+| Build, testes no host (228), teste de fumaça no QEMU | passando (ver "Testes") |
 | `recovery-alpine.img` no slot recovery, com a `backup` gravada | **testado em 22/11:** `Image.gz` subiu pelo U-Boot, modo completo, Wi-Fi com IP fixo, SSH pela chave, menu na tela |
 | Autoboot | no teste 1 ficou no Alpine sozinho (ruído do receptor IR contou como tecla); corrigido depois: só teclas de teclado de verdade, não testado de novo |
 | `boot-alpine.img` (Alpine na `boot`) | não testada |
-| Reinício em panic e travamento, watchdog reiniciando em vez de desligar | no kernel (abaixo); panic testado no QEMU, watchdog não testado no aparelho |
+| Reinício em panic e travamento, watchdog reiniciando em vez de desligar | no kernel (abaixo); panic testado no QEMU. No aparelho o `CRU_GLB_RST_CON` chegou como `0x103` e ficou `0x113` (o bit 1 já vinha ligado, faltava o 4); o reset do watchdog em si não foi testado |
+| Marca de ficar e contador de boots falhos na `misc` | testados no host e no QEMU; no aparelho, não |
 | Ponto de acesso próprio (hostapd no AIC8800) | não testado: o driver declara o modo AP, ninguém usou |
 | Panfrost e ambiente gráfico | módulo compilado, DT ajustado, pacotes no rootfs completo; não testados (o QEMU não tem a GPU) |
 | kexec | no QEMU o `kexec -e` entrega ao kernel novo, que cai cedo (ver "kexec"); no aparelho, não testado |
@@ -139,7 +140,11 @@ O daemon (`/usr/lib/hy300/wifi`) tem três modos:
    conecte o celular ou o PC e `ssh root@192.168.50.1`.
 
 O driver sobe com `sdio_clock=50000000`: o SDIO a 50 MHz, como no Android de fábrica (commit
-`0408d7166c75` do `hy300-6.1`).
+`0408d7166c75` do `hy300-6.1`). Antes dele o chip é desligado e religado: unbind e bind do host
+SDIO `fe2c0000` no `dwmmc_rockchip`, 2 s desligado (o `mmc-pwrseq` baixa o WL_REG_ON, gpio-73),
+e o daemon espera o cartão `0xc8a1` voltar ao barramento. Um AIC8800 travado sobrevive a reboot
+quente e, sem isso, só voltava tirando da tomada. São duas tentativas; persistindo a falha, a
+tela diz que não há Wi-Fi nem ponto de acesso (o mesmo chip) e o console local continua.
 
 Pelo SSH: `hy300-wifi status`, `hy300-wifi scan`, `hy300-wifi connect "Nome" senha`,
 `hy300-wifi reconnect`, `hy300-wifi ap`. Pelo teclado: opção `3` do menu. Redes acrescentadas
@@ -157,6 +162,7 @@ momento.
 |---|---|
 | `hy300-status` | o texto da tela |
 | `hy300-android` | reinicia para o Android (pela partição em que ele estiver) |
+| `hy300-ficar` | grava a marca de ficar na `misc`: o próximo boot do Alpine fica sem contagem |
 | `reboot` | reboot normal: sobe o que estiver na `boot` |
 | `hy300-partitions` | partições por nome, dispositivo e tamanho; também em `/dev/block/by-name/` |
 | `hy300-flash [--force] PART ARQ` | grava e confere o SHA-256 lendo de volta; recusa partição montada; `uboot`, `trust`, `misc` e `security` só com `--force` |
@@ -359,14 +365,11 @@ lado do Android pronto (BCB, acima).
 ## Riscos
 
 1. **BCB com o Android na recovery** (acima): mitigação no lado do Android, não instalada.
-2. **Laço de panic com o Alpine na boot: mitigado, não testado no aparelho.** Só a
-   `boot-alpine.img` leva `hy300.crash_to_recovery=1`: o kernel (`HY300_CRASH_TO_RECOVERY`,
-   commits `07edb22` e `f1081e0` do `hy300-6.1`) grava `BOOT_RECOVERY` no registrador do
-   reboot-mode logo no boot e de novo num panic (depois do notificador do BSP, que gravaria
-   "panic"). Travamento, watchdog ou panic voltam pela `recovery` (Android); reboots pedidos
-   (`reboot`, `hy300-android`) gravam o modo deles por cima, como antes. O Alpine não precisa
-   voltar o registrador para normal: só um reboot pedido volta à `boot`. A `recovery-alpine.img`
-   não leva o parâmetro (no slot de teste ele causaria o laço ao contrário).
+2. **Laço de um Alpine que não sobe: mitigado pelo contador da misc** (abaixo), não testado no
+   aparelho. Panic e watchdog do Alpine voltam ao Alpine; três boots seguidos sem ele ficar
+   pronto vão uma vez para o Android. Sobra um caso: um kernel que cai antes do `/init` (antes do
+   estágio 1 somar o contador) entra em laço; só a troca da imagem da `boot` resolve, e o kernel
+   é o mesmo que já sobe no slot de teste.
 3. **`Image.gz`** não provada no U-Boot de fábrica (imagem crua de reserva acima).
 4. **initramfs** de 14,6 MB em xz (o do marco 1 tinha 0,7 MB; o da recovery de fábrica, 46,5 MB).
 5. **Watchdog**: ver "Reinício em panic e travamento". O `sysinit` precisa terminar antes de ~89 s
@@ -400,7 +403,7 @@ registrador do modo de reboot), antes de armar o watchdog cedo (~89 s). O log mo
 Como testar no aparelho (com o usuário presente; pelo SSH ou pelo shell do tty2):
 
 ```sh
-dmesg | grep -E 'CRU_GLB_RST_CON|crash_to_recovery|watchdogd'   # confere a configuração
+dmesg | grep -E 'CRU_GLB_RST_CON|watchdogd'   # confere a configuração
 echo c > /proc/sysrq-trigger            # 1. panic: reinicia em ~5 s
 kill -STOP $(pidof hy300-watchdogd)     # 2. sistema parado: pré-timeout aos 30 s, panic, reinício
 echo 0 > /proc/sys/kernel/panic         # 3. reset de hardware: panic não reinicia mais...
@@ -408,9 +411,65 @@ kill -STOP $(pidof hy300-watchdogd)     #    ...o pré-timeout dá panic aos 30 
                                         #    aos ~60 s o reset do watchdog precisa REINICIAR
 ```
 
-Esperado nos três: o aparelho volta sozinho, sem o botão (ao Android com o Alpine na recovery; com
-o Alpine na boot e `crash_to_recovery`, também ao Android). Antes, o caso 3 desligava. Depois,
+Esperado nos três: o aparelho volta sozinho, sem o botão: ao Android com o Alpine na recovery
+(slot de teste), ao Alpine com o Alpine na boot. Antes, o caso 3 desligava. Depois,
 `cat /sys/fs/pstore/console-ramoops-0` mostra o fim do boot anterior (casos 1 e 2 com o panic).
+
+## Marca de ficar e contador de boots falhos (misc)
+
+Duas áreas de 16 bytes na `misc` (4 MiB), na parte que é zero na `misc` de fábrica (ela só tem
+dados em `0x0`-`0xfff`, BCB e dados A/B da Rockchip, e em `0x4000`, BCB legado):
+
+| Offset | Conteúdo | Quem grava | Quem apaga |
+|---|---|---|---|
+| `0x10000` | marca de ficar: `hy300-ficar ` + `01 00 00 00` | `scripts/reboot-to-alpine.sh` (pelo Android) ou `hy300-ficar` (no Alpine) | o estágio 1, antes de tudo |
+| `0x10010` | contador: `hy300-boots ` + contagem + 3 zeros (tudo zero é 0) | o estágio 1, +1 a cada boot | o autoboot, quando o Alpine fica pronto |
+
+- **Marca:** com ela o Alpine fica no ar sem contagem (menu, Wi-Fi, SSH), registrando
+  `ficando no Alpine: marca na misc`. Só o valor exato vale e ela é apagada antes de qualquer
+  outra coisa, então não vira laço. Do PC, com o Android no ar:
+
+  ```bash
+  scripts/reboot-to-alpine.sh            # acha o Alpine pelo hy300.slot= do cabeçalho
+  scripts/reboot-to-alpine.sh --dry-run  # só confere
+  ```
+
+  Ele grava a marca só se a área estiver zerada ou já com a marca, confere lendo de volta e
+  reinicia: reboot normal se o Alpine estiver na `boot`, ou o `reboot-to-test-slot.sh` do
+  hy300-rk3566 (registrador, sem BCB) se estiver na `recovery`.
+- **Contador:** "pronto" é o autoboot começar (sysinit, watchdog e sshd no ar). Se o Alpine
+  não chega lá em 3 boots seguidos, o estágio 1 zera o contador e vai uma vez para o Android.
+  Panic, watchdog e travamento do Alpine voltam ao Alpine. Dados desconhecidos nessa área ficam
+  intocados (o contador é ignorado).
+
+## Falhas do Android (com o Android na recovery)
+
+Objetivo: qualquer falha termina no Alpine. Evidências e propostas (nada instalado):
+
+- **Panic do Android:** o 4.19 grava `mode-panic` (`0x5242c307`) no registrador (DT de fábrica,
+  `~/hy300-work/marco1/fabrica.norm`, nó `reboot-mode`: bootloader e loader `0x5242c301`, charge
+  `0x5242c30b`, fastboot `0x5242c309`, normal `0x5242c300`, panic `0x5242c307`, recovery
+  `0x5242c303`, ums `0x5242c30c`, watchdog `0x5242c308`). O U-Boot de fábrica, pela desmontagem do
+  `rockchip_get_boot_mode` (tabela no `docs/kernel-6.1.md` do hy300-rk3566), sobe a `boot` com
+  panic e watchdog: o Alpine. Bom como está.
+- **Android travado sem panic:** o 4.19 de fábrica tem `PANIC_TIMEOUT=5`, `DW_WATCHDOG=y` e
+  `WATCHDOG_HANDLE_BOOT_ENABLED=y`. Antes de reiniciar para o Android, o Alpine deixa o dw-wdt
+  com o prazo máximo (~89 s) em modo de reset. Se o watchdog sobreviver ao reset (não sabemos: o
+  reset global costuma reiniciar os módulos), o 4.19 o assume e o alimenta, e um Android
+  travado reinicia na `boot`. O `CRU_GLB_RST_CON` provavelmente sobrevive (o CRU guarda o tipo do
+  último reset em `CRU_GLB_RST_ST`, então não é zerado por reset quente; no aparelho ele chegou ao
+  6.1 com o bit 1 já ligado, por alguém antes do kernel), mas isso não foi medido depois de um
+  reboot pelo Android. Alternativa garantida: o kernel do Android (o LineageOS, que é nosso) arma
+  o watchdog cedo e liga o bit 4, como o nosso `HY300_EARLY_BEACON`.
+- **Laço do init do Android:** o init do Android 12 (`system/core/init/reboot_utils.cpp`,
+  android12-release) reinicia para `init_fatal_reboot_target`, padrão `bootloader`, quando um
+  serviço crítico morre 4 vezes; no DT de fábrica `mode-bootloader` é `0x5242c301`, o mesmo do
+  loader, e o U-Boot entra no Rockusb esperando o PC. Proposta: acrescentar
+  `androidboot.init_fatal_panic=true` à cmdline do boot.img do Android que fica na `recovery`. Com
+  ele o init dá `echo c > /proc/sysrq-trigger` no lugar do reboot: panic, `mode-panic`, U-Boot
+  sobe a `boot`, Alpine. Evitar `androidboot.init_fatal_reboot_target=`: o init lê o valor com
+  `sizeof` de um `std::string` (bug), e o alvo sai errado; qualquer string desconhecida cai em
+  `normal` no reboot-mode do BSP (o que também levaria à `boot`), mas por acidente.
 
 ## Arquitetura
 
@@ -434,13 +493,15 @@ o Alpine na boot e `crash_to_recovery`, também ao Android). Antes, o caso 3 des
 python3 -I -m unittest discover -s tests      # host: shell, Python e o hy300-waitkey (gcc)
 ```
 
-No host (193 testes): partições por nome e BCB, leitura de boot.img e `hy300-kexec` (inclusive o
+No host (228 testes): partições por nome e BCB, leitura de boot.img e `hy300-kexec` (inclusive o
 unbind das placas de rede), autoboot (as duas partições, tecla, pendrive, falha), menu, tela (cabe
 em 64x18, sem travessão, arte 6BOT, modo de resgate), rede (casa com IP fixo, outra com DHCP,
 ponto de acesso, acrescentar rede, scan), persistência na `backup`, `hy300-flash`,
 `hy300-update-rootfs`, `hy300-waitkey` (eventos num arquivo e a classificação dos dispositivos de
 entrada do HY300), `hy300-watchdogd`, assinatura dos .apk e GPG,
-entradas do build, `mkimage`, gravação da `backup` pelo Android (adb falso) e a proposta do BCB.
+entradas do build, `mkimage`, gravação da `backup` pelo Android (adb falso), a proposta do BCB, a
+marca de ficar e o contador de boots falhos na `misc`, o `reboot-to-alpine.sh` (adb falso) e o
+ciclo de energia do AIC8800 (sysfs falso).
 Os testes em shell rodam no `/bin/sh` do host e no busybox do Alpine (binfmt), se o rootfs já foi
 montado.
 
@@ -456,4 +517,6 @@ PL011, virtio e teclado virtio, e o mesmo initramfs da imagem):
   initramfs dele é um aviso conhecido, acima);
 - sem a `backup`: modo de resgate, autoboot sem tecla para as duas partições (`reboot` normal e
   `RESTART2 "recovery"`) e tecla durante a contagem (fica);
-- panic (`echo c > /proc/sysrq-trigger`): reinicia sozinho em poucos segundos.
+- panic (`echo c > /proc/sysrq-trigger`): reinicia sozinho em poucos segundos;
+- marca de ficar na `misc`: fica sem contagem, a marca some e o contador zera;
+- contador em 3: vai uma vez para o Android pelo registrador e zera.
