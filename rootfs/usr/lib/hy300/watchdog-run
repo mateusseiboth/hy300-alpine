@@ -12,5 +12,5 @@ sleep_forever() {
 is_watchdog_off && sleep_forever
 [ -c "$HY300_WATCHDOG_DEV" ] || { log_kmsg watchdog "$HY300_WATCHDOG_DEV ausente"; sleep_forever; }
 echo -1000 >/proc/self/oom_score_adj
-log_kmsg watchdog "alimentado a cada $WATCHDOG_FEED_EVERY s (prazo $WATCHDOG_TIMEOUT s)"
-exec watchdog -F -T "$WATCHDOG_TIMEOUT" -t "$WATCHDOG_FEED_EVERY" "$HY300_WATCHDOG_DEV"
+log_kmsg watchdog "alimentado a cada $WATCHDOG_FEED_EVERY s (prazo $WATCHDOG_TIMEOUT s, pré-timeout com panic)"
+exec "$WATCHDOG_DAEMON" -T "$WATCHDOG_TIMEOUT" -P "$WATCHDOG_PRETIMEOUT" -t "$WATCHDOG_FEED_EVERY" "$HY300_WATCHDOG_DEV" 2>/dev/kmsg

@@ -37,8 +37,8 @@ class KexecMixin(ShellMixin):
         super().setUp()
         self.fake("kexec")
         self.fake("sync")
-        self.fake("watchdog")
-        self.fake("pidof", 'pidof\\ watchdog) cat "$WATCHDOG_PIDFILE" 2>/dev/null ;;')
+        self.fake("hy300-watchdogd")
+        self.fake("pidof", 'pidof\\ hy300-watchdogd) cat "$WATCHDOG_PIDFILE" 2>/dev/null ;;')
         self.write("cmdline", "console=tty0 androidboot.serialno=ABC androidboot.mode=normal hy300.slot=recovery\n")
         self.img = self.write("boot.img", build_bootimg())
 
