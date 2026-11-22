@@ -17,6 +17,60 @@ ARPHRD_ETHER=1
 # hy300-6.1).
 WIFI_SDIO_CLOCK=50000000
 
+# Religar o chip sem tirar da tomada (lógica do initramfs de teste do hy300-rk3566, commit
+# 36a14d5): o unbind do host SDIO faz o mmc-pwrseq-simple baixar o WL_REG_ON (GPIO2_B1,
+# gpio-73) e cortar o clock de 32 kHz; o bind religa e o núcleo MMC enumera o cartão de novo.
+# Um AIC8800 travado sobrevive a reboot quente: sem isto, só voltaria com corte de energia.
+: "${WIFI_SDIO_HOST_ADDR:=fe2c0000}"
+: "${WIFI_SDIO_VENDOR:=0xc8a1}"
+: "${WIFI_PLATFORM_DEVICES:=/sys/bus/platform/devices}"
+: "${WIFI_SDIO_DRIVER:=/sys/bus/platform/drivers/dwmmc_rockchip}"
+: "${WIFI_SDIO_DEVICES:=/sys/bus/sdio/devices}"
+: "${WIFI_POWER_OFF_SECONDS:=2}"
+: "${WIFI_CARD_WAIT:=10}"
+
+# O nome do nó muda entre as árvores (mmc@fe2c0000 no BSP, dwmmc@fe2c0000 no ACK).
+find_sdio_host() {
+	for dev in "$WIFI_PLATFORM_DEVICES/$WIFI_SDIO_HOST_ADDR".*; do
+		[ -e "$dev" ] || continue
+		basename "$dev"
+		return 0
+	done
+	return 1
+}
+
+has_wifi_card() {
+	for vendor in "$WIFI_SDIO_DEVICES"/*/vendor; do
+		[ "$(cat "$vendor" 2>/dev/null)" = "$WIFI_SDIO_VENDOR" ] && return 0
+	done
+	return 1
+}
+
+wait_for_wifi_card() {
+	remaining=$1
+	while :; do
+		has_wifi_card && return 0
+		[ "$remaining" -gt 0 ] || return 1
+		remaining=$((remaining - 1))
+		sleep 1
+	done
+}
+
+unload_wifi_modules() {
+	rmmod aic8800_fdrv 2>/dev/null
+	rmmod aic8800_bsp 2>/dev/null
+	return 0
+}
+
+power_cycle_wifi_chip() {
+	unload_wifi_modules
+	host=$(find_sdio_host) || { echo "host SDIO $WIFI_SDIO_HOST_ADDR não encontrado"; return 1; }
+	echo "$host" 2>/dev/null >"$WIFI_SDIO_DRIVER/unbind" || { echo "unbind de $host falhou"; return 1; }
+	sleep "$WIFI_POWER_OFF_SECONDS"
+	echo "$host" 2>/dev/null >"$WIFI_SDIO_DRIVER/bind" || { echo "bind de $host falhou"; return 1; }
+	wait_for_wifi_card "$WIFI_CARD_WAIT" || { echo "o chip Wi-Fi não voltou ao barramento SDIO em $WIFI_CARD_WAIT s"; return 1; }
+}
+
 load_wifi_modules() {
 	modprobe aic8800_bsp "aic_fw_path=$1" "sdio_clock=$WIFI_SDIO_CLOCK" || { echo "modprobe aic8800_bsp falhou"; return 1; }
 	modprobe aic8800_fdrv || { echo "modprobe aic8800_fdrv falhou"; return 1; }

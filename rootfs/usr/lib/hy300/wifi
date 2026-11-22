@@ -52,12 +52,29 @@ run_mode_ap() {
 	done
 }
 
+WIFI_START_ATTEMPTS=2
+
+# Religa o chip (WL_REG_ON) e carrega o driver; imprime a interface ou o motivo da falha.
+start_wifi_chip() {
+	result=$(power_cycle_wifi_chip 2>&1) || { echo "$result"; return 1; }
+	result=$(load_wifi_modules "$WIFI_FIRMWARE_DIR" 2>&1) || { echo "$result"; return 1; }
+	wait_for_wireless_iface "$WIFI_IFACE_WAIT" || { echo "sem interface sem fio em $WIFI_IFACE_WAIT s"; return 1; }
+}
+
 main() {
 	write_wifi_mode station
-	write_wifi_state "carregando o driver"
-	result=$(load_wifi_modules "$WIFI_FIRMWARE_DIR" 2>&1) || { write_wifi_state "FALHOU: $result"; log_kmsg wifi "FALHOU: $result"; return 1; }
-	iface=$(wait_for_wireless_iface "$WIFI_IFACE_WAIT") ||
-		{ write_wifi_state "FALHOU: sem interface sem fio em $WIFI_IFACE_WAIT s"; log_kmsg wifi "FALHOU: sem interface"; return 1; }
+	attempt=1
+	while :; do
+		write_wifi_state "religando o chip e carregando o driver (tentativa $attempt)"
+		iface=$(start_wifi_chip) && break
+		log_kmsg wifi "tentativa $attempt falhou: $iface"
+		[ "$attempt" -lt "$WIFI_START_ATTEMPTS" ] || {
+			write_wifi_state "FALHOU: $iface. Sem Wi-Fi nem ponto de acesso; use o teclado ou um cabo USB"
+			log_kmsg wifi "FALHOU depois de $WIFI_START_ATTEMPTS tentativas"
+			return 1
+		}
+		attempt=$((attempt + 1))
+	done
 	echo "$iface" >"$HY300_RUN/wifi-iface"
 	mode=station
 	while :; do

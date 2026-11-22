@@ -166,5 +166,29 @@ class NetworkMixin(ShellMixin):
         r = self.sh("build_scan_list", stdin=results)
         self.assertEqual(r.stdout.splitlines(), ["   -45 dBm  Casa", "   -60 dBm  Cafe Livre"])
 
+    # Ciclo de energia do AIC8800: unbind/bind do host SDIO (mmc-pwrseq baixa e sobe o WL_REG_ON).
+    def sdio_env(self, card=True):
+        os.makedirs(self.path("platform/fe2c0000.mmc"), exist_ok=True)
+        self.write("dwmmc/unbind", "")
+        self.write("dwmmc/bind", "")
+        if card:
+            self.write("sdio/mmc1:390b:1/vendor", "0xc8a1\n")
+        return {"WIFI_PLATFORM_DEVICES": self.path("platform"), "WIFI_SDIO_DRIVER": self.path("dwmmc"),
+                "WIFI_SDIO_DEVICES": self.path("sdio"), "WIFI_POWER_OFF_SECONDS": "0", "WIFI_CARD_WAIT": "1"}
+
+    def test_power_cycle_unbinds_and_binds_sdio_host(self):
+        self.fake("rmmod")
+        r = self.sh("power_cycle_wifi_chip", env=self.sdio_env())
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(open(self.path("dwmmc/unbind")).read().strip(), "fe2c0000.mmc")
+        self.assertEqual(open(self.path("dwmmc/bind")).read().strip(), "fe2c0000.mmc")
+        self.assertIn("rmmod aic8800_fdrv", self.fake_log())
+
+    def test_power_cycle_reports_card_that_does_not_come_back(self):
+        self.fake("rmmod")
+        r = self.sh("power_cycle_wifi_chip", env=self.sdio_env(card=False))
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("não voltou", r.stdout)
+
 
 make_suite(globals(), NetworkMixin)
