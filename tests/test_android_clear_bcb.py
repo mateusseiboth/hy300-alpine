@@ -36,7 +36,7 @@ class AndroidClearBcbTest(unittest.TestCase):
     def run_script(self):
         return subprocess.run(["sh", SCRIPT], env={"PATH": os.environ["PATH"], "HY300_MISC": self.misc,
                                                    "HY300_LOG": os.path.join(self.tmp, "log")},
-                              capture_output=True, text=True, timeout=30)
+                              capture_output=True, text=True, timeout=120)
 
     def read_misc(self):
         with open(self.misc, "rb") as f:

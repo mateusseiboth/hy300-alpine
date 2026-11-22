@@ -15,6 +15,7 @@ Rodadas:
   android    hy300.slot=boot hy300.autoboot=2 sem tecla: reboot(RESTART2, "recovery").
   normal     hy300.slot=recovery hy300.autoboot=2 sem tecla: reboot normal.
   tecla      hy300.slot=boot hy300.autoboot=20 e uma tecla durante a contagem: fica.
+  panic      echo c >/proc/sysrq-trigger: reinicia sozinho em poucos segundos (panic=5).
 
 Uso: smoke_qemu.py Image initramfs.cpio.xz dir_de_trabalho misc_de_fabrica.img chave.pub backup-alpine.img
 """
@@ -42,7 +43,7 @@ CHUNK = 1 << 20
 BCB_SIZE = 2048
 BOOT_TIMEOUT = 300
 # rockchip_drm_init faz SMC para o TF-A, que não existe no virt.
-CMDLINE = "console=ttyAMA0 panic=10 initcall_blacklist=rockchip_drm_init"
+CMDLINE = "console=ttyAMA0 panic=5 initcall_blacklist=rockchip_drm_init"
 KEXEC_MARK = "HY300_KEXEC_OK"
 
 
@@ -352,6 +353,25 @@ class Smoke:
         finally:
             qemu.stop()
 
+    def run_panic(self):
+        """Panic (sysrq c) reinicia sozinho em poucos segundos (panic=5; o QEMU sai com -no-reboot)."""
+        qemu = self.boot("panic", "hy300.slot=boot hy300.autoboot=0")
+        try:
+            if not self.check(self.wait_for_ssh(qemu), "SSH (rodada panic)"):
+                return
+            start = time.monotonic()
+            try:
+                self.ssh(qemu, "echo c >/proc/sysrq-trigger", timeout=20)
+            except subprocess.TimeoutExpired:
+                pass
+            exited = qemu.wait_for_exit(60)
+            elapsed = time.monotonic() - start
+            log = qemu.read_log()
+            self.check(exited and "Rebooting in 5 seconds" in log and elapsed < 30,
+                       f"panic reinicia sozinho em poucos segundos ({elapsed:.0f} s)")
+        finally:
+            qemu.stop()
+
     def run_key(self):
         qemu = self.boot("tecla", "hy300.slot=boot hy300.autoboot=20")
         try:
@@ -372,6 +392,7 @@ def main(image, initramfs, workdir, factory_misc, pubkey, backup):
     smoke.run_autoboot("android", "hy300.slot=boot hy300.autoboot=2", "reboot: Restarting system with command 'recovery'")
     smoke.run_autoboot("normal", "hy300.slot=recovery hy300.autoboot=2", "reboot: Restarting system")
     smoke.run_key()
+    smoke.run_panic()
     for warning in smoke.warnings:
         print("AVISO:", warning)
     print("ok: smoke-qemu" if not smoke.failures else f"smoke-qemu: {len(smoke.failures)} falha(s), logs em {workdir}")

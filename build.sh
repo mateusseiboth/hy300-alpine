@@ -52,7 +52,9 @@ CONFIGS=(rockchip_linux_defconfig rk3566.config rk3566_hy300.config)
 RECOVERY_SIZE=113246208
 BOOT_SIZE=41943040
 BACKUP_SIZE=390070272
-CMDLINE="hy300.autoboot=$AUTOBOOT panic=10 console=tty0 fbcon=font:TER16x32"
+CMDLINE="hy300.autoboot=$AUTOBOOT panic=5 console=tty0 fbcon=font:TER16x32"
+# Só a imagem da boot: panic e travamento voltam pela recovery (Android), sem laço na boot.
+BOOT_ONLY_CMDLINE="hy300.crash_to_recovery=1"
 
 IMAGE="$KOUT/arch/arm64/boot/Image"
 IMAGE_GZ="$BUILD/Image.gz"
@@ -128,7 +130,9 @@ build_static_tools() {
 	"$HY300_RK3566/kernel/reboot-recovery/build.sh" "$BUILD/bin/hy300-reboot-recovery" "$MUSL_WORK" >/dev/null
 	REALGCC="${CROSS}gcc" "$sysroot/bin/musl-gcc" -static -Os -std=c11 -D_GNU_SOURCE -Wall -Wextra -Werror \
 		-o "$BUILD/bin/hy300-waitkey" "$REPO/src/hy300-waitkey.c"
-	"${CROSS}strip" "$BUILD/bin/hy300-waitkey"
+	REALGCC="${CROSS}gcc" "$sysroot/bin/musl-gcc" -static -Os -std=c11 -D_GNU_SOURCE -Wall -Wextra -Werror \
+		-o "$BUILD/bin/hy300-watchdogd" "$REPO/src/hy300-watchdogd.c"
+	"${CROSS}strip" "$BUILD/bin/hy300-waitkey" "$BUILD/bin/hy300-watchdogd"
 }
 
 build_hostkey() {
@@ -206,13 +210,13 @@ build_initramfs() {
 
 build_image() {
 	python3 -I "$REPO/tools/mkimage.py" --like "$1" -o "$2" --kernel "$3" --ramdisk "$INITRAMFS" --dtb "$DTB" \
-		--append "hy300.slot=$4 $CMDLINE" --pad-to-like || fail "$(basename "$2") não cabe na partição $4"
+		--append "hy300.slot=$4 $CMDLINE${5:+ $5}" --pad-to-like || fail "$(basename "$2") não cabe na partição $4"
 }
 
 build_images() {
 	echo ">> imagens"
 	build_image "$FACTORY/recovery.img" "$OUT/recovery-alpine.img" "$IMAGE_GZ" recovery
-	build_image "$BOOT_REF" "$OUT/boot-alpine.img" "$IMAGE_GZ" boot
+	build_image "$BOOT_REF" "$OUT/boot-alpine.img" "$IMAGE_GZ" boot "$BOOT_ONLY_CMDLINE"
 	build_image "$FACTORY/recovery.img" "$OUT/recovery-alpine-image-crua.img" "$IMAGE" recovery
 }
 
@@ -234,6 +238,10 @@ verify_image() {
 	require_same "$check/second" "$check/like/second" "$img: resource de fábrica"
 	grep -qa 'snps,dwcmshc-sdhci' "$check/res/rk-kernel.dtb" || fail "$img: DT do resource sem o eMMC do U-Boot"
 	grep -q "hy300.slot=$slot " "$check/header.json" || fail "$img: cmdline sem hy300.slot=$slot"
+	[[ "$slot" == boot ]] || ! grep -q "hy300.crash_to_recovery" "$check/header.json" ||
+		fail "$img: hy300.crash_to_recovery fora da imagem da boot (laço na recovery)"
+	[[ "$slot" != boot ]] || grep -q "hy300.crash_to_recovery=1" "$check/header.json" ||
+		fail "$img: imagem da boot sem hy300.crash_to_recovery=1"
 	sha256sum "$img" | sed "s|$OUT/||" >"$img.sha256"
 }
 
