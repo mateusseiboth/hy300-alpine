@@ -1,0 +1,129 @@
+"""Autoboot da recuperação (rootfs/usr/lib/hy300/autoboot.sh e o script autoboot).
+
+Ao subir, o Alpine conta alguns segundos na tela e vai para o Android; uma tecla (controle IR,
+teclas do painel, teclado USB) faz ficar. O Android está na partição que o Alpine não ocupa:
+com hy300.slot=boot ele está na recovery (reboot pelo registrador, nunca pelo BCB); com
+hy300.slot=recovery ele está na boot (reboot normal).
+
+Rodar: python3 -I -m unittest discover -s tests
+"""
+import os
+
+from shelltest import LIB_DIR, ShellMixin, make_suite
+
+AUTOBOOT = os.path.join(LIB_DIR, "autoboot")
+
+
+class AutobootMixin(ShellMixin):
+    libs = ("common.sh", "autoboot.sh")
+
+    def setUp(self):
+        super().setUp()
+        self.fake("reboot")
+        self.fake("hy300-reboot-recovery")
+        self.fake("sync")
+        self.fake("stay")
+        self.fake("mount", 'mount\\ *sda1*) for last; do :; done; touch "$last/hy300-ficar" ;;')
+        self.fake("umount")
+
+    def env(self, cmdline="hy300.slot=boot", **extra):
+        self.write("cmdline", cmdline + "\n")
+        env = {"HY300_CMDLINE": self.path("cmdline"), "HY300_SYSFS_BLOCK": self.path("sys"),
+               "HY300_STAY_CMD": os.path.join(self.bin, "stay"), "HY300_WAITKEY": os.path.join(self.bin, "hy300-waitkey")}
+        env.update(extra)
+        return env
+
+    def waitkey(self, result):
+        word = "tecla 232" if result == "tecla" else result
+        lines = "echo 2; echo 1; " + f"echo {word}"
+        self.fake("hy300-waitkey", f'hy300-waitkey*) {lines}; [ {result} = tecla ] ;;')
+
+    def test_android_slot_is_the_other_partition(self):
+        r = self.sh("read_android_slot", env=self.env("hy300.slot=boot"))
+        self.assertEqual(r.stdout.strip(), "recovery")
+        r = self.sh("read_android_slot", env=self.env("hy300.slot=recovery"))
+        self.assertEqual(r.stdout.strip(), "boot")
+        r = self.sh("read_android_slot", env=self.env("console=tty0"))
+        self.assertEqual(r.stdout.strip(), "desconhecido")
+
+    def test_delay_comes_from_cmdline(self):
+        self.assertEqual(self.sh("read_autoboot_delay", env=self.env("hy300.autoboot=12")).stdout.strip(), "12")
+        self.assertEqual(self.sh("read_autoboot_delay", env=self.env("x=1")).stdout.strip(), "5")
+        self.assertEqual(self.sh("read_autoboot_delay", env=self.env("hy300.autoboot=x")).stdout.strip(), "5")
+
+    def test_stay_reasons(self):
+        r = self.sh('read_stay_reason 0 recovery', env=self.env())
+        self.assertIn("hy300.autoboot=0", r.stdout)
+        r = self.sh('read_stay_reason 5 desconhecido', env=self.env())
+        self.assertIn("partição do Android desconhecida", r.stdout)
+        r = self.sh('read_stay_reason 5 recovery', env=self.env())
+        self.assertEqual(r.stdout.strip(), "")
+
+    def test_late_stay_reason_from_run_file(self):
+        self.write("run/ficar", "")
+        r = self.sh("read_late_stay_reason", env=self.env())
+        self.assertIn("ficar", r.stdout)
+
+    def test_late_stay_reason_from_usb_flag(self):
+        self.write("sys/sda/uevent", "DEVTYPE=disk\n")
+        self.write("sys/sda1/uevent", "DEVTYPE=partition\n")
+        r = self.sh("read_late_stay_reason", env=self.env())
+        self.assertIn("pendrive", r.stdout)
+        self.assertIn("umount", " ".join(self.fake_log()))
+
+    def test_countdown_text(self):
+        r = self.sh("build_countdown_text 5", env=self.env())
+        self.assertIn("iniciando o Android em 5 s", r.stdout)
+        self.assertIn("Aperte qualquer tecla do teclado", r.stdout)
+        self.assertNotIn("—", r.stdout)
+
+    def test_no_key_boots_android_in_recovery_by_register(self):
+        self.waitkey("tempo")
+        r = self.sh(f'sh "{AUTOBOOT}"', env=self.env("hy300.slot=boot hy300.autoboot=2"))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        log = self.fake_log()
+        self.assertIn("hy300-reboot-recovery ", log)
+        self.assertNotIn("reboot ", log)
+        self.assertNotIn("stay", " ".join(log))
+        screen = open(self.path("tty1")).read()
+        self.assertIn("Iniciando o Android", screen)
+
+    def test_no_key_boots_android_in_boot_with_normal_reboot(self):
+        self.waitkey("tempo")
+        self.sh(f'sh "{AUTOBOOT}"', env=self.env("hy300.slot=recovery hy300.autoboot=2"))
+        log = self.fake_log()
+        self.assertIn("reboot ", log)
+        self.assertNotIn("hy300-reboot-recovery ", log)
+
+    def test_key_press_stays(self):
+        self.waitkey("tecla")
+        self.sh(f'sh "{AUTOBOOT}"', env=self.env("hy300.slot=boot"))
+        log = self.fake_log()
+        self.assertIn("stay tecla", log)
+        self.assertFalse(any(line.startswith(("reboot", "hy300-reboot-recovery")) for line in log))
+
+    def test_autoboot_zero_stays_without_countdown(self):
+        self.waitkey("tempo")
+        self.sh(f'sh "{AUTOBOOT}"', env=self.env("hy300.slot=boot hy300.autoboot=0"))
+        log = self.fake_log()
+        self.assertFalse(any(line.startswith("hy300-waitkey") for line in log))
+        self.assertTrue(any(line.startswith("stay ") for line in log), log)
+
+    def test_run_file_during_countdown_stays(self):
+        self.fake("hy300-waitkey", 'hy300-waitkey*) touch "$HY300_RUN/ficar"; echo tempo; exit 1 ;;')
+        self.sh(f'sh "{AUTOBOOT}"', env=self.env("hy300.slot=boot"))
+        self.assertTrue(any(line.startswith("stay ") for line in self.fake_log()))
+
+    def test_failed_reboot_falls_back_to_staying(self):
+        self.waitkey("tempo")
+        self.fake("hy300-reboot-recovery", 'hy300-reboot-recovery*) exit 1 ;;')
+        self.sh(f'sh "{AUTOBOOT}"', env=self.env("hy300.slot=boot"))
+        self.assertIn("stay falha ao reiniciar para o Android", self.fake_log())
+
+    def test_broken_waitkey_still_boots_android(self):
+        self.fake("hy300-waitkey", 'hy300-waitkey*) exit 127 ;;')
+        self.sh(f'sh "{AUTOBOOT}"', env=self.env("hy300.slot=boot"))
+        self.assertIn("hy300-reboot-recovery ", self.fake_log())
+
+
+make_suite(globals(), AutobootMixin)

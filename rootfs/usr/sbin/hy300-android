@@ -1,0 +1,11 @@
+#!/bin/sh
+# Reinicia para o Android: pelo registrador do reboot-mode se ele estiver na recovery, reboot
+# normal se estiver na boot. Nunca grava o BCB da misc.
+: "${HY300_LIB:=/usr/lib/hy300}"
+. "$HY300_LIB/common.sh"
+. "$HY300_LIB/autoboot.sh"
+android=$(read_android_slot)
+[ "$android" = desconhecido ] && { echo "não sei em que partição está o Android (falta hy300.slot na cmdline)"; exit 1; }
+log_kmsg android "reiniciando para o Android (partição $android)"
+echo "reiniciando para o Android (partição $android)"
+boot_android "$android"
