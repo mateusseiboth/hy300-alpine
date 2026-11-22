@@ -1,0 +1,15 @@
+# Proposta (android/clear-bcb no hy300-alpine): apaga o boot-recovery do BCB da misc no começo
+# do boot do Android e de novo no fim, para o próximo boot voltar ao Alpine na partição boot.
+# Instalar em /system/etc/init/ (overlay do adb remount) com o script em /system/bin/.
+service hy300-clear-bcb /system/bin/sh /system/bin/hy300-clear-bcb.sh
+    user root
+    group root
+    seclabel u:r:su:s0
+    disabled
+    oneshot
+
+on post-fs-data
+    start hy300-clear-bcb
+
+on property:sys.boot_completed=1
+    start hy300-clear-bcb
