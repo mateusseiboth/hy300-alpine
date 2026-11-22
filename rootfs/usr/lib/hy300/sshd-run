@@ -1,0 +1,4 @@
+#!/bin/sh
+# sshd em primeiro plano (inittab, ::respawn), log no syslog (logread).
+mkdir -p /var/empty
+exec /usr/sbin/sshd -D

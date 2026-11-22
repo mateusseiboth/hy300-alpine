@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- labwc do HY300: atalhos padrão mais Super+Enter (terminal) e Super+D (programas). -->
+<labwc_config>
+  <theme><name>Adwaita</name><font><name>DejaVu Sans</name><size>12</size></font></theme>
+  <keyboard>
+    <default />
+    <keybind key="W-Return"><action name="Execute" command="foot" /></keybind>
+    <keybind key="W-d"><action name="Execute" command="fuzzel" /></keybind>
+    <keybind key="W-S-e"><action name="Exit" /></keybind>
+  </keyboard>
+</labwc_config>

@@ -1,0 +1,16 @@
+# /etc/inittab da recuperação do HY300 (busybox init, sem OpenRC).
+#
+# Ordem: sysinit (rápido, espera) -> respawn/once. O watchdog sobe logo depois do sysinit: o
+# kernel o armou no começo do boot e, se disparar, o aparelho desliga.
+::sysinit:/usr/lib/hy300/sysinit
+::respawn:/usr/lib/hy300/watchdog-run
+::respawn:/usr/lib/hy300/sshd-run
+
+# tty1 (a projeção): contagem do autoboot e, ficando, o menu (teclado USB).
+tty1::once:/usr/lib/hy300/autoboot
+
+# tty2 (Alt+F2 no teclado USB): shell de root sem senha, sem depender de rede.
+tty2::respawn:/sbin/getty -n -l /bin/sh 38400 tty2
+
+::ctrlaltdel:/sbin/reboot
+::shutdown:/usr/lib/hy300/shutdown

@@ -1,0 +1,20 @@
+#!/bin/sh
+# Teste da GPU (Mali-G52) com o Panfrost: carrega o módulo, mostra os nós DRM e roda o kmscube
+# por alguns segundos na projeção.
+#
+# Uso: hy300-gpu-test [segundos]
+#
+# O Mesa com o Panfrost (~50 MB comprimido por causa do LLVM) não cabe na imagem. Instale
+# antes, na RAM, pela rede (some no próximo boot):
+#   hy300-extras mesa-dri-gallium mesa-egl mesa-gles mesa-gbm kmscube libdrm-tests
+#
+#
+seconds=${1:-15}
+modprobe panfrost || { echo "modprobe panfrost falhou (dmesg | tail)"; exit 1; }
+sleep 2
+dmesg | grep -i panfrost | tail -n 5
+ls -l /dev/dri
+command -v kmscube >/dev/null || { sed -n '6,10s/^# \{0,1\}//p' "$0"; exit 1; }
+# O console de texto ocupa o DRM: sai do modo texto enquanto o kmscube roda.
+timeout "$seconds" kmscube -D /dev/dri/card0
+echo "kmscube terminou (código $?)"

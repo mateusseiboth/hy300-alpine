@@ -1,0 +1,13 @@
+# sshd da recuperação do HY300: só root por chave (authorized_keys vem do PC no build).
+Port 22
+HostKey /etc/ssh/ssh_host_ed25519_key
+PermitRootLogin prohibit-password
+PubkeyAuthentication yes
+AuthorizedKeysFile .ssh/authorized_keys
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitEmptyPasswords no
+UseDNS no
+PrintMotd yes
+ClientAliveInterval 30
+Subsystem sftp internal-sftp

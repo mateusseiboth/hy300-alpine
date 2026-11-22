@@ -1,0 +1,118 @@
+#!/bin/busybox sh
+# Estágio 1 da recuperação do HY300 (initramfs da partição boot ou recovery).
+#
+# Modo completo: acha a partição backup pelo nome (PARTNAME no sysfs), monta o ext4 dela só-
+# leitura, confere o rootfs.sqfs (tamanho e SHA-256 do rootfs.sqfs.sha256) e o usa como rootfs:
+# o Alpine completo, com os extras e o ambiente gráfico.
+#
+# Modo de resgate: se a backup faltar, não montar ou o rootfs não conferir, usa o squashfs
+# embutido aqui (o núcleo: rede, SSH, ponto de acesso, partições, kexec, menu e autoboot), que
+# basta para regravar a backup pela rede.
+#
+# Nos dois: uma camada gravável em tmpfs por cima (overlayfs) e switch_root para o busybox init
+# do Alpine. /etc/hy300-mode diz o modo. A backup segue montada (só-leitura) em /media/backup.
+#
+# Se nem o núcleo montar: mensagem na tela e no pstore e, 60 s depois, reboot para o Android.
+# hy300.verify=0 na cmdline pula o SHA-256 (uns segundos a menos no boot).
+/bin/busybox mkdir -p /proc /sys /dev /tmp /mnt/backup /mnt/ro /mnt/rw /mnt/root
+/bin/busybox --install -s /bin
+export PATH=/bin
+FAIL_WAIT=60
+BACKUP_WAIT=10
+CORE=/rootfs.sqfs
+
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+echo on >/proc/sys/kernel/printk_devkmsg
+
+log() {
+	echo "<5>hy300: [estagio1] $*" >/dev/kmsg
+}
+
+read_cmdline_value() {
+	tr ' ' '\n' </proc/cmdline | sed -n "s/^$1=//p" | tail -n 1
+}
+
+boot_android() {
+	sync
+	[ "$(read_cmdline_value hy300.slot)" = boot ] && exec /bin/hy300-reboot-recovery
+	reboot -f
+}
+
+fail() {
+	log "FALHOU: $1"
+	printf '\n\n  Recuperação: FALHOU: %s.\n  Voltando ao Android em %s s.\n' "$1" "$FAIL_WAIT" >/dev/tty1
+	sleep "$FAIL_WAIT"
+	boot_android
+}
+
+find_partition_by_name() {
+	for uevent in /sys/class/block/*/uevent; do
+		grep -qx "PARTNAME=$1" "$uevent" 2>/dev/null || continue
+		basename "$(dirname "$uevent")"
+		return 0
+	done
+	return 1
+}
+
+wait_for_partition() {
+	remaining=$2
+	while :; do
+		find_partition_by_name "$1" && return 0
+		[ "$remaining" -gt 0 ] || return 1
+		remaining=$((remaining - 1))
+		sleep 1
+	done
+}
+
+is_rootfs_valid() {
+	[ -f "$1" ] && [ -f "$1.sha256" ] || { echo "partição backup sem o Alpine"; return 1; }
+	[ "$(read_cmdline_value hy300.verify)" = 0 ] && return 0
+	want=$(cut -c1-64 "$1.sha256")
+	got=$(sha256sum "$1" | cut -c1-64)
+	[ "$want" = "$got" ] || { echo "rootfs.sqfs da backup não confere com o sha256"; return 1; }
+}
+
+# Imprime o caminho do rootfs da backup, ou o motivo de não usar.
+find_backup_rootfs() {
+	dev=$(wait_for_partition backup "$BACKUP_WAIT") || { echo "partição backup não encontrada"; return 1; }
+	mount -t ext4 -o ro "/dev/$dev" /mnt/backup 2>/dev/null || { echo "partição backup sem ext4"; return 1; }
+	is_rootfs_valid /mnt/backup/rootfs.sqfs || { umount /mnt/backup; return 1; }
+	echo /mnt/backup/rootfs.sqfs
+}
+
+mount_root() {
+	mount -t tmpfs -o mode=755 tmpfs /mnt/rw || { echo "tmpfs não montou"; return 1; }
+	mkdir -p /mnt/rw/upper /mnt/rw/work
+	mount -t squashfs -o loop,ro "$1" /mnt/ro || { echo "squashfs $1 não montou"; return 1; }
+	mount -t overlay overlay -o lowerdir=/mnt/ro,upperdir=/mnt/rw/upper,workdir=/mnt/rw/work /mnt/root ||
+		{ echo "overlayfs não montou"; return 1; }
+	[ -x /mnt/root/sbin/init ] || { echo "rootfs sem /sbin/init"; return 1; }
+}
+
+# O rootfs da backup não montou depois de conferido: desfaz e volta ao núcleo.
+undo_mounts() {
+	umount /mnt/root /mnt/ro /mnt/rw /mnt/backup 2>/dev/null
+	return 0
+}
+
+# A backup primeiro: depois de mover o /proc não há mais /proc/mounts aqui.
+move_mounts() {
+	grep -q ' /mnt/backup ' /proc/mounts && mkdir -p /mnt/root/media/backup &&
+		mount --move /mnt/backup /mnt/root/media/backup
+	mount --move /proc /mnt/root/proc
+	mount --move /sys /mnt/root/sys
+	mount --move /dev /mnt/root/dev
+}
+
+log "início (partição $(read_cmdline_value hy300.slot))"
+mode=completo
+rootfs=$(find_backup_rootfs) || { mode="resgate: $rootfs"; rootfs=$CORE; }
+reason=$(mount_root "$rootfs")
+[ -n "$reason" ] && [ "$rootfs" != "$CORE" ] && { log "backup: $reason"; undo_mounts; mode="resgate: $reason"; rootfs=$CORE; reason=$(mount_root "$CORE"); }
+[ -n "$reason" ] && fail "$reason"
+echo "$mode" >/mnt/root/etc/hy300-mode
+log "modo $mode; rootfs $rootfs montado, passando para o init do Alpine"
+move_mounts
+exec switch_root /mnt/root /sbin/init

@@ -1,0 +1,10 @@
+#!/bin/sh
+# inittab, ::shutdown: antes do reboot normal.
+: "${HY300_LIB:=/usr/lib/hy300}"
+. "$HY300_LIB/common.sh"
+log_kmsg shutdown "reiniciando"
+pkill -x wpa_supplicant 2>/dev/null
+pkill -x hostapd 2>/dev/null
+sync
+umount -a -r 2>/dev/null
+sync

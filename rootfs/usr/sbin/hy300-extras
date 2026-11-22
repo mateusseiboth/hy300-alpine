@@ -1,0 +1,13 @@
+#!/bin/sh
+# Instala os extras (diagnóstico e gráficos: Mesa/Panfrost, kmscube, modetest, alsa-utils,
+# evtest, i2c-tools, htop, tmux, nano, strace...) com apk add, pela rede, na RAM. Some no
+# próximo boot. Precisa de internet (rede de casa ou outra; no ponto de acesso próprio não há).
+#
+# Uso: hy300-extras [pacote...]     sem argumentos, todos os de /etc/hy300/extras.txt
+#
+# Os pacotes são conferidos pelo apk com as chaves do Alpine em /etc/apk/keys.
+LIST=/etc/hy300/extras.txt
+[ $# -gt 0 ] || set -- $(grep -v '^#' "$LIST" | grep .)
+free_mb=$(awk '/^MemAvailable:/ { print int($2 / 1024) }' /proc/meminfo)
+echo "RAM livre: $free_mb MB; os extras ocupam uns 300 MB"
+apk update && apk add "$@"

@@ -1,0 +1,13 @@
+#!/bin/sh
+# Ambiente gráfico (labwc + waybar + foot, fuzzel, pcmanfm, mpv...) sobre o Panfrost. Só no
+# modo completo (Alpine da partição backup). Volta ao modo texto quando o labwc fecha: botão
+# direito na área de trabalho, Sair (ou Super+Shift+E).
+command -v labwc >/dev/null || { echo "o ambiente gráfico só existe no modo completo (partição backup)"; exit 1; }
+modprobe panfrost 2>/dev/null || echo "aviso: o Panfrost não carregou; o labwc tenta sem GPU (pixman)"
+export XDG_RUNTIME_DIR=/run/hy300/xdg
+mkdir -p -m 700 "$XDG_RUNTIME_DIR"
+pidof seatd >/dev/null || { seatd -g root >/var/log/seatd.log 2>&1 & sleep 1; }
+export LIBSEAT_BACKEND=seatd XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=labwc
+# Sem GPU (Panfrost ausente ou com problema), o wlroots desenha por software.
+[ -e /dev/dri/renderD128 ] || export WLR_RENDERER=pixman
+exec labwc

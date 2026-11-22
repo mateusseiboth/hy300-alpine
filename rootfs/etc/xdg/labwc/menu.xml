@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Menu do botão direito na área de trabalho (labwc). -->
+<openbox_menu>
+  <menu id="root-menu" label="HY300">
+    <item label="Terminal"><action name="Execute" command="foot" /></item>
+    <item label="Programas"><action name="Execute" command="fuzzel" /></item>
+    <item label="Arquivos"><action name="Execute" command="pcmanfm" /></item>
+    <item label="Editor de texto"><action name="Execute" command="mousepad" /></item>
+    <item label="Navegador"><action name="Execute" command="netsurf-gtk3" /></item>
+    <item label="Volume (alsamixer)"><action name="Execute" command="foot alsamixer" /></item>
+    <item label="Monitor (htop)"><action name="Execute" command="foot htop" /></item>
+    <separator />
+    <item label="Sair do ambiente gráfico"><action name="Exit" /></item>
+  </menu>
+</openbox_menu>

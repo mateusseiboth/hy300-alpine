@@ -1,0 +1,16 @@
+{
+  "layer": "top",
+  "position": "top",
+  "height": 32,
+  "modules-left": ["custom/programas", "custom/terminal", "custom/arquivos"],
+  "modules-center": ["clock"],
+  "modules-right": ["network", "temperature", "memory", "cpu"],
+  "custom/programas": { "format": "Programas", "on-click": "fuzzel", "tooltip": false },
+  "custom/terminal": { "format": "Terminal", "on-click": "foot", "tooltip": false },
+  "custom/arquivos": { "format": "Arquivos", "on-click": "pcmanfm", "tooltip": false },
+  "clock": { "format": "{:%H:%M}" },
+  "network": { "format": "{ifname} {ipaddr}", "format-disconnected": "sem rede" },
+  "temperature": { "format": "SoC {temperatureC} °C" },
+  "memory": { "format": "RAM {used:0.1f}/{total:0.1f} GB" },
+  "cpu": { "format": "CPU {usage}%" }
+}

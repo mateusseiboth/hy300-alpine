@@ -1,0 +1,16 @@
+#!/bin/sh
+# Daemon do watchdog (inittab, ::respawn). Ver watchdog.sh. Com /run/hy300/watchdog-off (antes
+# de um kexec) ou sem /dev/watchdog (QEMU), fica parado sem abrir o dispositivo.
+: "${HY300_LIB:=/usr/lib/hy300}"
+. "$HY300_LIB/common.sh"
+. "$HY300_LIB/watchdog.sh"
+
+sleep_forever() {
+	while :; do sleep 3600; done
+}
+
+is_watchdog_off && sleep_forever
+[ -c "$HY300_WATCHDOG_DEV" ] || { log_kmsg watchdog "$HY300_WATCHDOG_DEV ausente"; sleep_forever; }
+echo -1000 >/proc/self/oom_score_adj
+log_kmsg watchdog "alimentado a cada $WATCHDOG_FEED_EVERY s (prazo $WATCHDOG_TIMEOUT s)"
+exec watchdog -F -T "$WATCHDOG_TIMEOUT" -t "$WATCHDOG_FEED_EVERY" "$HY300_WATCHDOG_DEV"

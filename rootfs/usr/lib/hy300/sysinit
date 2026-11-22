@@ -1,0 +1,40 @@
+#!/bin/sh
+# Primeira etapa do init (inittab, ::sysinit): montagens, log, partições por nome e o BCB da
+# misc. Precisa ser rápida: o daemon do watchdog só sobe depois dela, e o watchdog armado pelo
+# kernel no começo do boot desliga o aparelho em ~89 s.
+: "${HY300_LIB:=/usr/lib/hy300}"
+. "$HY300_LIB/common.sh"
+. "$HY300_LIB/partitions.sh"
+. "$HY300_LIB/persist.sh"
+MISC_WAIT=15
+
+mount_basics() {
+	mkdir -p /dev/pts /dev/shm
+	mount -t devpts -o mode=620,ptmxmode=666 devpts /dev/pts 2>/dev/null
+	mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs /dev/shm 2>/dev/null
+	mount -t tmpfs -o mode=755,nosuid,nodev tmpfs /run
+	mkdir -p "$HY300_RUN" /run/lock /var/run/wpa_supplicant /var/run/hostapd
+	mount -t debugfs debugfs /sys/kernel/debug 2>/dev/null
+	mount -t pstore pstore /sys/fs/pstore 2>/dev/null
+	echo on >/proc/sys/kernel/printk_devkmsg 2>/dev/null
+}
+
+handle_misc() {
+	misc=$(wait_for_partition misc "$MISC_WAIT") || { log_kmsg misc "partição não encontrada"; return; }
+	is_misc_size_expected "$misc" || { log_kmsg misc "/dev/$misc com tamanho inesperado, intocada"; return; }
+	log_kmsg misc "$(clear_bcb_if_recovery "/dev/$misc")"
+}
+
+main() {
+	mount_basics
+	hostname hy300
+	syslogd -C512
+	log_kmsg sysinit "Alpine $(cat /etc/alpine-release), partição $(read_slot), $(cat /etc/hy300-build 2>/dev/null)"
+	log_kmsg sysinit "modo $(cat /etc/hy300-mode 2>/dev/null)"
+	restore_wifi_networks /etc/wpa_supplicant/wpa_supplicant.conf
+	handle_misc
+	link_partitions_by_name
+	log_kmsg sysinit "pronto (t=$(read_uptime) s)"
+}
+
+main
