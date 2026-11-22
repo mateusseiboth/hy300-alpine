@@ -1,0 +1,17 @@
+# Ambiente gráfico opcional (só na partição backup, modo completo): labwc (Wayland, janelas
+# como no Openbox, mouse e teclado) com painel, terminal, lançador e programas para testar o
+# projetor. Sobe pela opção 5 do menu ou pelo hy300-desktop; o boot continua em modo texto.
+seatd
+labwc
+waybar
+swaybg
+wlr-randr
+foot
+fuzzel
+pcmanfm
+mousepad
+mpv
+imv
+netsurf
+font-dejavu
+adwaita-icon-theme

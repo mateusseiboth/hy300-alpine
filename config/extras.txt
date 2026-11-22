@@ -1,0 +1,22 @@
+# Extras: diagnóstico e gráficos. Fora da imagem (não cabem na boot com o núcleo); o comando
+# hy300-extras instala na RAM com apk add depois que a rede sobe (some no próximo boot).
+# O Mesa com o Panfrost sozinho custa ~50 MB comprimido (libLLVM de 168 MB).
+mesa-dri-gallium
+mesa-egl
+mesa-gles
+mesa-gbm
+kmscube
+libdrm-tests
+alsa-utils
+evtest
+i2c-tools
+usbutils
+iperf3
+ethtool
+htop
+tmux
+nano
+strace
+dtc
+curl
+openssh-client-default

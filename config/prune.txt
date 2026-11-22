@@ -1,0 +1,12 @@
+# Pacotes instalados só por dependência que nada na recuperação usa: os arquivos saem do
+# rootfs (o banco do apk continua listando; "apk fix <pacote>" traz de volta).
+#
+# python3: os subpacotes android-tools-* do Alpine dependem dele, mas lpdump, lpunpack,
+# lpmake, simg2img e img2simg são binários em C++. Custa ~9 MB comprimido.
+python3
+python3-pyc
+python3-pycache-pyc0
+sqlite-libs
+# protoc e libprotoc: compilador do protobuf, puxado pelo libprotobuf; o lpdump só usa a lib.
+protoc
+libprotoc

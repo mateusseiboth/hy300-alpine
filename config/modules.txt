@@ -1,0 +1,5 @@
+# Módulos do kernel que entram na imagem (o resto, como DVB e bcmdhd, fica de fora).
+drivers/net/wireless/aic8800/aic8800_bsp/aic8800_bsp.ko
+drivers/net/wireless/aic8800/aic8800_fdrv/aic8800_fdrv.ko
+drivers/gpu/drm/panfrost/panfrost.ko
+drivers/gpu/drm/scheduler/gpu-sched.ko

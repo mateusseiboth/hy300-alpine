@@ -1,0 +1,38 @@
+# Núcleo da recuperação: rede, SSH, partições/backup e kexec. Tem de caber inteiro na
+# partição boot (40 MiB) com o kernel comprimido e o resource (README, "Tamanho") e não pode
+# depender da super. Diagnóstico e gráficos ficam em extras.txt (hy300-extras, pela rede).
+
+# acesso e rede
+busybox-static
+busybox-extras
+openssh-server
+wpa_supplicant
+hostapd
+iw
+kmod
+
+# partições, backup e gravação (inclusive a super com partições dinâmicas)
+e2fsprogs
+f2fs-tools
+dosfstools
+exfatprogs
+erofs-utils
+sgdisk
+sfdisk
+lsblk
+blkid
+losetup
+device-mapper
+mmc-utils
+android-tools-lpdump
+android-tools-lpunpack
+android-tools-lpmake
+android-tools-simg2img
+android-tools-img2simg
+rsync
+pv
+zstd
+xz
+
+# kernels de teste
+kexec-tools
