@@ -1,0 +1,6 @@
+#!/bin/sh
+# Lista as partições do eMMC: nome, dispositivo e tamanho em bytes (e em MiB).
+: "${HY300_LIB:=/usr/lib/hy300}"
+. "$HY300_LIB/common.sh"
+. "$HY300_LIB/partitions.sh"
+list_partitions | awk '{ printf "%-16s %-12s %12d  %8.1f MiB\n", $1, $2, $3, $3 / 1048576 }'

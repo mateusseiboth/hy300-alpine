@@ -1,0 +1,112 @@
+#!/bin/sh
+# Boota o kernel de um boot.img (header v0 a v2) com kexec, sem gravar partição nenhuma.
+#
+# Uso: hy300-kexec [opções] boot.img
+#   --dry-run              mostra o comando do kexec e não carrega nada
+#   --load-only            carrega (kexec -l) e não executa; depois: kexec -e
+#   --append "args"        acrescenta parâmetros à cmdline do header
+#   --cmdline "args"       troca a cmdline do header
+#   --inherit-androidboot  copia os androidboot.* da cmdline atual (o U-Boot os põe no boot)
+#   --no-dtb               não passa a seção dtb: o kernel novo recebe o DT em uso
+#   --file                 usa kexec_file_load (kexec -s) no lugar de kexec_load
+#
+# A cmdline final é: header (ou --cmdline), androidboot.* herdados, --append. A Image pode
+# vir comprimida (Image.gz): o kexec-tools descomprime. Antes do kexec -e os drivers das placas
+# de rede saem (unbind), para não haver DMA na RAM do kernel novo, e o watchdog fica com
+# o maior prazo (ver watchdog.sh): o kernel novo precisa assumir o /dev/watchdog em até ~89 s
+# ou ter o driver com CONFIG_WATCHDOG_HANDLE_BOOT_ENABLED, senão o aparelho desliga.
+set -u
+: "${HY300_LIB:=/usr/lib/hy300}"
+. "$HY300_LIB/common.sh"
+. "$HY300_LIB/bootimg.sh"
+. "$HY300_LIB/watchdog.sh"
+: "${HY300_KEXEC_DIR:=/tmp/hy300-kexec}"
+: "${HY300_SYSRQ:=/proc/sysrq-trigger}"
+: "${HY300_SYSFS_NET:=/sys/class/net}"
+
+print_usage() {
+	sed -n '2,15s/^# \{0,1\}//p' "$0"
+}
+
+dry_run=
+load_only=
+append=
+cmdline_override=
+inherit=
+no_dtb=
+file_mode=
+image=
+
+parse_args() {
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		--dry-run) dry_run=1 ;;
+		--load-only) load_only=1 ;;
+		--append) [ $# -ge 2 ] || return 1; append=$2; shift ;;
+		--cmdline) [ $# -ge 2 ] || return 1; cmdline_override=$2; shift ;;
+		--inherit-androidboot) inherit=1 ;;
+		--no-dtb) no_dtb=1 ;;
+		--file) file_mode=1 ;;
+		-h | --help) return 1 ;;
+		-*) echo "opção desconhecida: $1"; return 1 ;;
+		*) [ -z "$image" ] || return 1; image=$1 ;;
+		esac
+		shift
+	done
+	[ -n "$image" ]
+}
+
+read_androidboot_args() {
+	tr ' ' '\n' <"$HY300_CMDLINE" | grep '^androidboot\.' | tr '\n' ' '
+}
+
+build_kexec_cmdline() {
+	result=${cmdline_override:-$BOOTIMG_CMDLINE}
+	[ -n "$inherit" ] && result="$result $(read_androidboot_args)"
+	[ -n "$append" ] && result="$result $append"
+	echo "$result" | tr -s ' ' | sed 's/ $//'
+}
+
+# Placas de rede (Wi-Fi por SDIO, USB, virtio) seguem com DMA nos buffers de recepção depois
+# do kexec e estragam a memória do kernel novo: o driver de cada uma sai antes (unbind).
+unbind_network_devices() {
+	for dir in "$HY300_SYSFS_NET"/*; do
+		[ "$(basename "$dir")" = lo ] && continue
+		[ -e "$dir/device/driver/unbind" ] || continue
+		device=$(basename "$(readlink -f "$dir/device")")
+		echo "$device" >"$dir/device/driver/unbind" 2>/dev/null
+	done
+	return 0
+}
+
+run_kexec() {
+	log_kmsg kexec "executando o kernel de $image"
+	unbind_network_devices
+	prepare_watchdog_for_kexec
+	sync
+	echo u >"$HY300_SYSRQ" 2>/dev/null
+	sync
+	kexec -e
+}
+
+main() {
+	parse_args "$@" || { print_usage; return 2; }
+	read_bootimg "$image" || return 1
+	extract_bootimg "$image" "$HY300_KEXEC_DIR" || { echo "falha ao extrair $image"; return 1; }
+	dir=$HY300_KEXEC_DIR
+	cmdline=$(build_kexec_cmdline)
+	set -- -l "$dir/kernel"
+	[ -n "$file_mode" ] && set -- -s "$@"
+	[ -s "$dir/ramdisk" ] && set -- "$@" "--initrd=$dir/ramdisk"
+	[ -s "$dir/dtb" ] && [ -z "$no_dtb" ] && set -- "$@" "--dtb=$dir/dtb"
+	set -- "$@" "--command-line=$cmdline"
+	[ -n "$dry_run" ] && { echo "kexec $*"; return 0; }
+	kexec "$@" || { echo "kexec: falha ao carregar o kernel de $image"; return 1; }
+	[ -n "$load_only" ] && { echo "kernel carregado; para executar: kexec -e"; return 0; }
+	# Pelo SSH a rede cai no unbind: o resto segue destacado da sessão.
+	[ -n "${SSH_CONNECTION:-}" ] || { run_kexec; return; }
+	echo "kernel carregado; a rede cai e o kernel novo sobe em ~2 s"
+	(sleep 2; run_kexec) </dev/null >/dev/null 2>&1 &
+}
+
+main "$@"

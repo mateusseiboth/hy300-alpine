@@ -1,0 +1,35 @@
+#!/bin/sh
+# Troca o Alpine completo (rootfs.sqfs da partição backup) com ele rodando, sem Android.
+#
+# Uso: hy300-update-rootfs ARQUIVO.sqfs SHA256
+#   no PC: scp -O rootfs.sqfs root@IP:/tmp/  (ou cat rootfs.sqfs | ssh root@IP 'cat >/tmp/rootfs.sqfs')
+#          ssh root@IP hy300-update-rootfs /tmp/rootfs.sqfs $(cut -c1-64 rootfs.sqfs.sha256)
+#
+# O novo vai para rootfs.sqfs.novo, é conferido e só então renomeado por cima; o antigo segue
+# em uso até o reboot. A backup fica gravável só durante a troca. Vale no próximo boot.
+: "${HY300_LIB:=/usr/lib/hy300}"
+. "$HY300_LIB/common.sh"
+: "${HY300_BACKUP:=/media/backup}"
+
+[ $# -eq 2 ] || { sed -n '2,10s/^# \{0,1\}//p' "$0"; exit 2; }
+new=$1
+want=$2
+mountpoint -q "$HY300_BACKUP" || { echo "a partição backup não está montada (modo de resgate?): grave a backup-alpine.img inteira com hy300-flash"; exit 1; }
+[ -f "$new" ] || { echo "$new não existe"; exit 1; }
+
+replace_rootfs() {
+	target="$HY300_BACKUP/rootfs.sqfs"
+	cp "$new" "$target.novo" || return 1
+	got=$(sha256sum "$target.novo" | cut -c1-64)
+	[ "$got" = "$want" ] || { rm -f "$target.novo"; echo "FALHOU: a cópia tem $got, esperado $want"; return 1; }
+	mv "$target.novo" "$target" && echo "$want  rootfs.sqfs" >"$target.sha256"
+}
+
+mount -o remount,rw "$HY300_BACKUP" || { echo "não foi possível deixar a backup gravável"; exit 1; }
+replace_rootfs
+result=$?
+sync
+mount -o remount,ro "$HY300_BACKUP"
+[ "$result" -eq 0 ] || exit 1
+log_kmsg update "rootfs.sqfs trocado ($want)"
+echo "ok: rootfs.sqfs trocado; vale no próximo boot (reboot)"

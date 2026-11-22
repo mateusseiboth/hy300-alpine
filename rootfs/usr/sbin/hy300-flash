@@ -1,0 +1,83 @@
+#!/bin/sh
+# Grava uma imagem numa partição do eMMC pelo nome e confere o SHA-256 lendo de volta.
+#
+# Uso: hy300-flash [--force] <partição> <arquivo>
+#      hy300-flash [--force] --size BYTES --sha256 HASH <partição> -     (imagem pela entrada)
+#
+# A imagem precisa ser crua (super esparsa: simg2img antes). Pela entrada padrão o tamanho e o
+# hash são obrigatórios: é o que o scripts/hy300-flash-partition.sh do PC manda. Bootloader e
+# misc (uboot, trust, misc, security) só com --force.
+set -u
+: "${HY300_LIB:=/usr/lib/hy300}"
+. "$HY300_LIB/common.sh"
+: "${HY300_BY_NAME:=/dev/block/by-name}"
+: "${HY300_MOUNTS:=/proc/mounts}"
+PROTECTED=" uboot trust misc security "
+BLOCK_SIZE=4194304
+
+force=
+size=
+sha=
+part=
+source=
+
+print_usage() {
+	sed -n '2,9s/^# \{0,1\}//p' "$0"
+}
+
+parse_args() {
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		--force) force=1 ;;
+		--size) [ $# -ge 2 ] || return 1; size=$2; shift ;;
+		--sha256) [ $# -ge 2 ] || return 1; sha=$2; shift ;;
+		-h | --help) return 1 ;;
+		*) [ -z "$part" ] && part=$1 && shift && continue
+			[ -z "$source" ] || return 1
+			source=$1 ;;
+		esac
+		shift
+	done
+	[ -n "$part" ] && [ -n "$source" ]
+}
+
+require_partition() {
+	device="$HY300_BY_NAME/$part"
+	[ -e "$device" ] || { echo "partição '$part' não existe (veja hy300-partitions)"; return 1; }
+	real=$(readlink -f "$device")
+	grep -q "^$real " "$HY300_MOUNTS" && { echo "'$part' está montada ($real): desmonte antes (a backup em uso se atualiza com hy300-update-rootfs)"; return 1; }
+	case "$PROTECTED" in
+	*" $part "*) [ -n "$force" ] || { echo "'$part' é do bootloader ou da misc: use --force se tiver certeza"; return 1; } ;;
+	esac
+}
+
+# Tamanho e hash esperados: do arquivo, ou dos argumentos quando vem pela entrada.
+read_expected() {
+	[ "$source" = - ] && { [ -n "$size" ] && [ -n "$sha" ] || { echo "pela entrada, informe --size e --sha256"; return 1; }; return 0; }
+	[ -f "$source" ] || { echo "$source não existe"; return 1; }
+	size=$(wc -c <"$source" | tr -d ' ')
+	sha=$(sha256sum "$source" | cut -c1-64)
+}
+
+write_image() {
+	[ "$source" = - ] && { head -c "$size" | dd of="$device" bs="$BLOCK_SIZE" conv=notrunc,fsync 2>/dev/null; return; }
+	dd if="$source" of="$device" bs="$BLOCK_SIZE" conv=notrunc,fsync 2>/dev/null
+}
+
+main() {
+	parse_args "$@" || { print_usage; return 2; }
+	require_partition || return 1
+	read_expected || return 1
+	part_size=$(blockdev --getsize64 "$device")
+	[ "$size" -le "$part_size" ] || { echo "imagem de $size bytes é maior que '$part' ($part_size bytes)"; return 1; }
+	log_kmsg flash "gravando $size bytes em $part"
+	echo "gravando $size bytes em $part"
+	write_image || { echo "FALHOU: erro de escrita em $part"; return 1; }
+	sync
+	got=$(head -c "$size" "$device" | sha256sum | cut -c1-64)
+	[ "$got" = "$sha" ] || { echo "FALHOU: o que está em $part NÃO confere ($got, esperado $sha)"; log_kmsg flash "FALHOU em $part"; return 1; }
+	log_kmsg flash "$part gravada e conferida ($sha)"
+	echo "ok: $part gravada e conferida ($sha)"
+}
+
+main "$@"
