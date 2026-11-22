@@ -1,0 +1,12 @@
+#!/bin/sh
+# Grava a marca de "ficar" na misc: o próximo boot do Alpine fica nele sem contagem (menu,
+# Wi-Fi e SSH), como se alguém tivesse apertado uma tecla. Vale uma vez: o Alpine a apaga ao
+# subir. Ver misc_mark.sh.
+: "${HY300_LIB:=/usr/lib/hy300}"
+. "$HY300_LIB/common.sh"
+. "$HY300_LIB/misc_mark.sh"
+: "${HY300_BY_NAME:=/dev/block/by-name}"
+
+write_stay_mark "$HY300_BY_NAME/misc" || exit 1
+log_kmsg ficar "marca gravada na misc"
+echo "ok: no próximo boot o Alpine fica no ar sem contagem (reboot para reiniciar agora)"
