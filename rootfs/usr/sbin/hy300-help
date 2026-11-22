@@ -1,0 +1,23 @@
+#!/bin/sh
+cat <<'TEXTO'
+Recuperação do HY300 (Alpine). Comandos:
+
+  hy300-status                 IP, rede e partições (o que aparece na tela)
+  hy300-android                reinicia para o Android
+  reboot                       reinicia normal (volta ao que estiver na partição boot)
+  hy300-partitions             partições do eMMC (também em /dev/block/by-name)
+  hy300-flash PART ARQUIVO     grava uma imagem numa partição e confere o SHA-256
+  hy300-kexec boot.img         boota o kernel de um boot.img sem gravar nada (--help)
+  hy300-wifi status|scan|connect NOME [SENHA]|reconnect|ap
+  hy300-hwinfo                 retrato do hardware
+  hy300-extras                 instala pela rede, na RAM: Mesa, modetest, alsa-utils, evtest,
+                               i2c-tools, htop, tmux, nano, strace...
+  hy300-gpu-test               teste da GPU com o Panfrost (depois do hy300-extras)
+  logread                      log do sistema (sshd, wpa_supplicant, DHCP)
+
+Backup de uma partição para o PC (no PC):
+  ssh root@IP 'cat /dev/block/by-name/boot' > boot.img
+  ou o scripts/hy300-backup.sh do repositório hy300-alpine.
+
+Partições lógicas da super: lpdump /dev/block/by-name/super, lpunpack, simg2img.
+TEXTO

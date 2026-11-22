@@ -1,0 +1,18 @@
+#!/bin/sh
+# Retrato do hardware: kernel, eMMC, DRM, entrada, áudio, I2C, temperatura, memória, USB.
+section() {
+	printf '\n== %s ==\n' "$1"
+}
+section kernel; uname -a; cat /proc/cmdline
+section modelo; tr -d '\000' </sys/firmware/devicetree/base/model; echo
+section memória; head -n 3 /proc/meminfo
+section partições; hy300-partitions
+section mmc; cat /sys/class/mmc_host/*/mmc*/name /sys/class/mmc_host/*/mmc*/type 2>/dev/null
+section drm; ls /sys/class/drm; cat /sys/class/drm/card*-*/status 2>/dev/null
+section entrada; grep -E '^(N|H):' /proc/bus/input/devices
+section áudio; aplay -l 2>/dev/null || cat /proc/asound/cards
+section i2c; for bus in /dev/i2c-*; do echo "$bus"; i2cdetect -y -r "${bus#/dev/i2c-}" 2>/dev/null; done
+section temperatura; for z in /sys/class/thermal/thermal_zone*; do echo "$(cat "$z/type") $(cat "$z/temp")"; done
+section usb; lsusb 2>/dev/null
+section rede; ip -br addr
+section "erros do kernel"; dmesg -l err,crit,alert,emerg | tail -n 30

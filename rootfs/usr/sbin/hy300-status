@@ -1,0 +1,4 @@
+#!/bin/sh
+# O mesmo texto da tela (status e menu), para quem está no SSH.
+cat /run/hy300/status 2>/dev/null || echo "a tela de status só existe depois de decidir ficar no Alpine"
+echo "Wi-Fi: $(cat /run/hy300/wifi-mode 2>/dev/null), $(cat /run/hy300/wifi-state 2>/dev/null)"

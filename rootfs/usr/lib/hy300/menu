@@ -1,0 +1,76 @@
+#!/bin/sh
+# Menu local no tty1 (teclado USB): tela de status com IP e ssh, e as opções
+#   1 atualizar, 2 iniciar o Android, 3 escolher rede Wi-Fi, 4 shell de root, 5 ambiente gráfico.
+# Sem tecla, a tela se atualiza a cada STATUS_EVERY segundos.
+: "${HY300_LIB:=/usr/lib/hy300}"
+. "$HY300_LIB/common.sh"
+. "$HY300_LIB/network.sh"
+. "$HY300_LIB/screen.sh"
+. "$HY300_LIB/autoboot.sh"
+. "$HY300_LIB/status.sh"
+. "$HY300_LIB/menu.sh"
+STATUS_EVERY=5
+CHOICE_WAIT=60
+
+# Descarta o que foi digitado antes (a tecla que interrompeu a contagem, por exemplo).
+flush_input() {
+	while read -r -s -n 1 -t 0.2 _ 2>/dev/null; do :; done
+}
+
+show_cursor() {
+	printf '\033[?25h'
+}
+
+run_action_atualizar() {
+	:
+}
+
+run_action_android() {
+	show_screen "$(printf '\n\n  Iniciando o Android...')"
+	boot_android "$(read_android_slot)"
+	sleep 10
+}
+
+run_action_shell() {
+	printf '\033[2J\033[H'
+	show_cursor
+	echo "Shell de root. Digite exit para voltar ao menu (hy300-help lista os comandos)."
+	/bin/sh -l
+}
+
+run_action_grafico() {
+	command -v labwc >/dev/null || { show_screen "$(printf '\n\n  O ambiente gráfico só existe no modo completo (partição backup).')"; sleep 4; return; }
+	show_screen "$(printf '\n\n  Abrindo o ambiente gráfico. Para voltar: menu do botão direito, Sair.')"
+	hy300-desktop >/var/log/hy300-desktop.log 2>&1
+}
+
+run_action_rede() {
+	show_screen "$(printf '\n\n  Procurando redes Wi-Fi...')"
+	list=$(hy300-wifi scan)
+	[ -n "$list" ] || { show_screen "$(printf '\n\n  Nenhuma rede encontrada.')"; sleep 3; return; }
+	show_screen "$(printf '\n  Redes Wi-Fi:\n\n'; echo "$list" | build_network_list; printf '\n  Número da rede (outra tecla volta):')"
+	flush_input
+	key=
+	read -r -s -n 1 -t "$CHOICE_WAIT" key
+	name=$(echo "$list" | read_network_by_number "$key") || return
+	show_screen "$(printf '\n  Rede: %s\n\n  Senha (Enter vazio para rede aberta):' "$name")"
+	show_cursor
+	password=
+	read -r -s password
+	result=$(hy300-wifi connect "$name" "$password") || { show_screen "$(printf '\n\n  %s' "$result")"; sleep 4; return; }
+	show_screen "$(printf '\n\n  Conectando em %s...' "$name")"
+	sleep 5
+}
+
+main() {
+	flush_input
+	while :; do
+		collect_status >"$HY300_RUN/status"
+		show_screen "$(cat "$HY300_RUN/status")"
+		key=
+		read -r -s -n 1 -t "$STATUS_EVERY" key
+		"run_action_$(read_menu_action "$key")"
+	done
+}
+
+main

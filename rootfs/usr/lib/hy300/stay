@@ -1,0 +1,21 @@
+#!/bin/sh
+# Ficando no Alpine: sobe o Wi-Fi e a Ethernet e passa para o menu do tty1 (status, Android,
+# escolher rede, shell), que mantém o IP e o comando de ssh na tela.
+: "${HY300_LIB:=/usr/lib/hy300}"
+. "$HY300_LIB/common.sh"
+. "$HY300_LIB/network.sh"
+. "$HY300_LIB/screen.sh"
+. "$HY300_LIB/autoboot.sh"
+. "$HY300_LIB/status.sh"
+# Nível do console: só avisos e erros do kernel na tela (o driver do Wi-Fi escreve muito).
+CONSOLE_LOGLEVEL=4
+
+main() {
+	log_kmsg stay "$1"
+	dmesg -n "$CONSOLE_LOGLEVEL" 2>/dev/null
+	"$HY300_LIB/wifi" &
+	"$HY300_LIB/ethernet" &
+	exec "$HY300_LIB/menu"
+}
+
+main "$@"
