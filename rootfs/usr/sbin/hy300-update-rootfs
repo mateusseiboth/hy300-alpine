@@ -5,8 +5,10 @@
 #   no PC: scp -O rootfs.sqfs root@IP:/tmp/  (ou cat rootfs.sqfs | ssh root@IP 'cat >/tmp/rootfs.sqfs')
 #          ssh root@IP hy300-update-rootfs /tmp/rootfs.sqfs $(cut -c1-64 rootfs.sqfs.sha256)
 #
-# O novo vai para rootfs.sqfs.novo, é conferido e só então renomeado por cima; o antigo segue
-# em uso até o reboot. A backup fica gravável só durante a troca. Vale no próximo boot.
+# O novo vai para rootfs.sqfs.novo, é conferido e só então entra no lugar. O antigo, em uso pelo
+# loop até o reboot, fica como rootfs.sqfs.anterior: apagado ele viraria um órfão no ext4, a
+# backup não voltaria a só-leitura e o estágio 1 não a montaria no boot seguinte. A backup fica
+# gravável só durante a troca. Vale no próximo boot.
 : "${HY300_LIB:=/usr/lib/hy300}"
 . "$HY300_LIB/common.sh"
 : "${HY300_BACKUP:=/media/backup}"
@@ -22,6 +24,8 @@ replace_rootfs() {
 	cp "$new" "$target.novo" || return 1
 	got=$(sha256sum "$target.novo" | cut -c1-64)
 	[ "$got" = "$want" ] || { rm -f "$target.novo"; echo "FALHOU: a cópia tem $got, esperado $want"; return 1; }
+	rm -f "$target.anterior"
+	[ -f "$target" ] && { ln "$target" "$target.anterior" || return 1; }
 	mv "$target.novo" "$target" && echo "$want  rootfs.sqfs" >"$target.sha256"
 }
 
@@ -29,7 +33,7 @@ mount -o remount,rw "$HY300_BACKUP" || { echo "não foi possível deixar a backu
 replace_rootfs
 result=$?
 sync
-mount -o remount,ro "$HY300_BACKUP"
+mount -o remount,ro "$HY300_BACKUP" || echo "aviso: a backup continua gravável até o reboot"
 [ "$result" -eq 0 ] || exit 1
 log_kmsg update "rootfs.sqfs trocado ($want)"
 echo "ok: rootfs.sqfs trocado; vale no próximo boot (reboot)"

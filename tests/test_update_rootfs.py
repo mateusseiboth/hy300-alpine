@@ -1,7 +1,8 @@
 """hy300-update-rootfs: troca o rootfs.sqfs da partição backup com o Alpine rodando.
 
-Copia o arquivo novo para rootfs.sqfs.novo, confere o SHA-256, renomeia por cima (o antigo
-continua aberto pelo loop até o reboot) e grava o .sha256; a backup fica rw só nesse tempo.
+Copia o arquivo novo para rootfs.sqfs.novo, confere o SHA-256, põe no lugar (o antigo, aberto
+pelo loop até o reboot, fica como rootfs.sqfs.anterior) e grava o .sha256; a backup fica rw só
+nesse tempo.
 
 Rodar: python3 -I -m unittest discover -s tests
 """
@@ -37,6 +38,26 @@ class UpdateRootfsMixin(ShellMixin):
         self.assertTrue(read_bytes(self.path("backup/rootfs.sqfs.sha256")).startswith(digest.encode()))
         mounts = [line for line in self.fake_log() if line.startswith("mount ")]
         self.assertEqual([m.split()[2] for m in mounts], ["remount,rw", "remount,ro"])
+
+    def test_old_rootfs_stays_linked_as_anterior(self):
+        # Apagar o antigo, ainda aberto pelo loop, deixa um órfão no ext4: a backup não volta a
+        # só-leitura e o estágio 1 não monta mais a partição no boot seguinte.
+        new = self.write("novo.sqfs", b"NOVO")
+        r = self.update(new, hashlib.sha256(b"NOVO").hexdigest())
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(read_bytes(self.path("backup/rootfs.sqfs.anterior")), b"VELHO")
+
+    def test_previous_anterior_is_replaced(self):
+        self.write("backup/rootfs.sqfs.anterior", b"MAIS-VELHO")
+        new = self.write("novo.sqfs", b"NOVO")
+        self.update(new, hashlib.sha256(b"NOVO").hexdigest())
+        self.assertEqual(read_bytes(self.path("backup/rootfs.sqfs.anterior")), b"VELHO")
+
+    def test_warns_when_backup_stays_writable(self):
+        self.fake("mount", 'mount*remount,ro*) exit 32 ;;')
+        new = self.write("novo.sqfs", b"NOVO")
+        r = self.update(new, hashlib.sha256(b"NOVO").hexdigest())
+        self.assertIn("continua gravável", r.stdout)
 
     def test_wrong_hash_keeps_old_rootfs(self):
         new = self.write("novo.sqfs", b"NOVO")

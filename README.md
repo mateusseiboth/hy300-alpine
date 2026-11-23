@@ -173,7 +173,7 @@ momento.
 | `reboot` | reboot normal: sobe o que estiver na `boot` |
 | `hy300-partitions` | partições por nome, dispositivo e tamanho; também em `/dev/block/by-name/` |
 | `hy300-flash [--force] PART ARQ` | grava e confere o SHA-256 lendo de volta; recusa partição montada; `uboot`, `trust`, `misc` e `security` só com `--force` |
-| `hy300-update-rootfs ARQ SHA256` | troca o `rootfs.sqfs` da `backup` com o Alpine rodando (vale no próximo boot) |
+| `hy300-update-rootfs ARQ SHA256` | troca o `rootfs.sqfs` da `backup` com o Alpine rodando (vale no próximo boot; o antigo fica como `rootfs.sqfs.anterior`) |
 | `hy300-kexec [opções] boot.img` | boota o kernel de um boot.img v0 a v2 (abaixo) |
 | `hy300-wifi ...` | Wi-Fi (acima) |
 | `hy300-desktop` | ambiente gráfico (o mesmo da opção 5) |
