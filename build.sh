@@ -130,7 +130,9 @@ build_static_tools() {
 		-o "$BUILD/bin/hy300-waitkey" "$REPO/src/hy300-waitkey.c"
 	REALGCC="${CROSS}gcc" "$sysroot/bin/musl-gcc" -static -Os -std=c11 -D_GNU_SOURCE -Wall -Wextra -Werror \
 		-o "$BUILD/bin/hy300-watchdogd" "$REPO/src/hy300-watchdogd.c"
-	"${CROSS}strip" "$BUILD/bin/hy300-waitkey" "$BUILD/bin/hy300-watchdogd"
+	REALGCC="${CROSS}gcc" "$sysroot/bin/musl-gcc" -static -Os -std=c11 -D_GNU_SOURCE -Wall -Wextra -Werror \
+		-o "$BUILD/bin/hy300-vendorstorage" "$REPO/src/hy300-vendorstorage.c"
+	"${CROSS}strip" "$BUILD/bin/hy300-waitkey" "$BUILD/bin/hy300-watchdogd" "$BUILD/bin/hy300-vendorstorage"
 }
 
 build_hostkey() {

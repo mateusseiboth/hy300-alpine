@@ -1,0 +1,36 @@
+#!/bin/sh
+# Modo de instalação na vendor storage (id 50), que o U-Boot da TXCZ lê para girar o logo de
+# boot: '2' ou '3' (teto) giram 180°, '0' e '1' (mesa) não. O Android de fábrica gravava pelo
+# TxczSetting; com ele desativado, o id 50 fica no último modo que a TXCZ gravou.
+#
+# Uso: hy300-orientacao            mostra o valor atual (não grava nada)
+#      hy300-orientacao 0|1|2|3    grava e confere lendo de volta
+#        0 mesa frontal, 1 mesa traseira, 2 teto frontal, 3 teto traseira
+: "${HY300_LIB:=/usr/lib/hy300}"
+. "$HY300_LIB/common.sh"
+: "${HY300_VENDORSTORAGE:=hy300-vendorstorage}"
+INSTALL_MODE_ID=50
+
+describe_mode() {
+	case "$1" in
+	0) echo "mesa frontal: logo do U-Boot normal" ;;
+	1) echo "mesa traseira: logo do U-Boot normal" ;;
+	2) echo "teto frontal: logo do U-Boot girado 180°" ;;
+	3) echo "teto traseira: logo do U-Boot girado 180°" ;;
+	*) echo "valor desconhecido: o U-Boot mostra o logo normal" ;;
+	esac
+}
+
+show_mode() {
+	mode=$($HY300_VENDORSTORAGE read "$INSTALL_MODE_ID") || { echo "id $INSTALL_MODE_ID não lido"; return 1; }
+	echo "id $INSTALL_MODE_ID = '$mode' ($(describe_mode "$mode"))"
+}
+
+case "${1:-}" in
+'') show_mode ;;
+0 | 1 | 2 | 3)
+	$HY300_VENDORSTORAGE write "$INSTALL_MODE_ID" "$1" || exit 1
+	log_kmsg orientacao "vendor storage id $INSTALL_MODE_ID = '$1'"
+	show_mode ;;
+*) sed -n '2,10s/^# \{0,1\}//p' "$0"; exit 2 ;;
+esac

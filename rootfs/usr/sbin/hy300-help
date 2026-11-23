@@ -10,6 +10,9 @@ Recuperação do HY300 (Alpine). Comandos:
   hy300-kexec boot.img         boota o kernel de um boot.img sem gravar nada (--help)
   hy300-wifi status|scan|connect NOME [SENHA]|reconnect|ap
   hy300-hwinfo                 retrato do hardware
+  hy300-orientacao [0-3]       modo de instalação na vendor storage (id 50): o U-Boot
+                               gira o logo com 2 ou 3 (teto); sem argumento só mostra
+  hy300-vendorstorage read|write ID [VALOR]   itens da vendor storage
   hy300-extras                 instala pela rede, na RAM: Mesa, modetest, alsa-utils, evtest,
                                i2c-tools, htop, tmux, nano, strace...
   hy300-gpu-test               teste da GPU com o Panfrost (depois do hy300-extras)

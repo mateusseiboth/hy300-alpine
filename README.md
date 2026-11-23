@@ -59,7 +59,7 @@ Nos dois modos o rootfs fica comprimido na RAM com um tmpfs gravável por cima (
 
 | Item | Estado |
 |---|---|
-| Build, testes no host (228), teste de fumaça no QEMU | passando (ver "Testes") |
+| Build, testes no host (239), teste de fumaça no QEMU | passando (ver "Testes") |
 | `recovery-alpine.img` no slot recovery, com a `backup` gravada | **testado em 22/11:** `Image.gz` subiu pelo U-Boot, modo completo, Wi-Fi com IP fixo, SSH pela chave, menu na tela |
 | Autoboot | no teste 1 ficou no Alpine sozinho (ruído do receptor IR contou como tecla); corrigido depois: só teclas de teclado de verdade, não testado de novo |
 | `boot-alpine.img` (Alpine na `boot`) | não testada |
@@ -172,6 +172,8 @@ momento.
 | `hy300-desktop` | ambiente gráfico (o mesmo da opção 5) |
 | `hy300-gpu-test` | Panfrost + kmscube, sem o ambiente gráfico |
 | `hy300-hwinfo` | retrato do hardware |
+| `hy300-orientacao [0\|1\|2\|3]` | sem argumento, mostra o modo de instalação no id 50 da vendor storage (não grava); com argumento grava o byte ASCII e confere. O U-Boot da TXCZ gira o logo 180° com `2` ou `3` (teto) |
+| `hy300-vendorstorage [-d DEV] read [--hex] ID` / `write [--hex] ID VALOR` | itens da vendor storage pelo `/dev/vendor_storage` (ioctl `VENDOR_READ_IO`/`VENDOR_WRITE_IO` do driver do eMMC); a escrita confere lendo de volta |
 | `hy300-extras [pacote...]` | `apk add` pela rede, na RAM (útil no modo de resgate) |
 | `logread` | log do sistema (sshd, wpa_supplicant, hostapd, DHCP) |
 
@@ -493,7 +495,7 @@ Objetivo: qualquer falha termina no Alpine. Evidências e propostas (nada instal
 python3 -I -m unittest discover -s tests      # host: shell, Python e o hy300-waitkey (gcc)
 ```
 
-No host (228 testes): partições por nome e BCB, leitura de boot.img e `hy300-kexec` (inclusive o
+No host (239 testes): partições por nome e BCB, leitura de boot.img e `hy300-kexec` (inclusive o
 unbind das placas de rede), autoboot (as duas partições, tecla, pendrive, falha), menu, tela (cabe
 em 64x18, sem travessão, arte 6BOT, modo de resgate), rede (casa com IP fixo, outra com DHCP,
 ponto de acesso, acrescentar rede, scan), persistência na `backup`, `hy300-flash`,
