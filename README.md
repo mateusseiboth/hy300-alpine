@@ -308,7 +308,8 @@ O que o `build.sh` lê do PC (nada disso vai para o repositório):
 | recovery de fábrica | `~/hy300-backup/recovery.img`, conferida pelo `SHA256SUMS` |
 | boot atual (com a splash) | `~/hy300-backup/estado-20261122/particoes/boot.img`, conferida pelo `SHA256SUMS` dali |
 
-Passos: kernel (`Image`, módulos, dtb; confere `config/kernel-required.txt`) e `Image.gz`;
+Passos: kernel (`Image`, módulos, dtb; confere `config/kernel-required.txt` e, com o
+`tools/dt_gpio_irq.py` do hy300-rk3566, as teclas do `gpio-keys` contra o DT de fábrica) e `Image.gz`;
 `hy300-waitkey` e o `reboot-recovery` do hy300-rk3566, estáticos com musl; Alpine 3.24.4
 (`tools/alpine_fetch.py`: GPG do minirootfs com a impressão digital do Natanael Copa fixada,
 chaves x86_64 do alpine-keys de dentro dele, APKINDEX e apk-tools-static conferidos por RSA e
@@ -510,7 +511,9 @@ ponto de acesso, acrescentar rede, scan), persistência na `backup`, `hy300-flas
 entrada do HY300), `hy300-watchdogd`, assinatura dos .apk e GPG,
 entradas do build, `mkimage`, gravação da `backup` pelo Android (adb falso), a proposta do BCB, a
 marca de ficar e o contador de boots falhos na `misc`, o `reboot-to-alpine.sh` (adb falso) e o
-ciclo de energia do AIC8800 (sysfs falso).
+ciclo de energia do AIC8800 (sysfs falso) e as teclas do `gpio-keys` no DTB compilado
+(`tests/test_kernel_dt.py`: a tecla de energia no GPIO1_B0, pino do LED, sem tipo de IRQ, dava
+uma tempestade de ~270 mil interrupções por segundo na CPU0).
 Os testes em shell rodam no `/bin/sh` do host e no busybox do Alpine (binfmt), se o rootfs já foi
 montado.
 

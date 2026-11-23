@@ -101,6 +101,9 @@ build_kernel() {
 	kmake "$KOUT" Image modules "rockchip/$DTB_NAME"
 	python3 -I "$REPO/tools/build_inputs.py" kconfig "$KOUT/.config" "$REPO/config/kernel-required.txt" || exit 1
 	grep -qa 'HY300 Projector' "$IMAGE" || fail "Image sem o DT embutido do HY300"
+	# Tecla do gpio-keys no pino de fábrica e fora das saídas de LED (tests/test_kernel_dt.py).
+	python3 -I "$HY300_RK3566/tools/dt_gpio_irq.py" check "$DTB" \
+		--factory "$HY300_RK3566/device-tree/rk3566-hy300-txcz.dtb" || fail "DT: teclas do gpio-keys"
 	KREL="$(kmake "$KOUT" -s kernelrelease)"
 	gzip -9 -n -c "$IMAGE" >"$IMAGE_GZ"
 	echo "ok: $KREL, Image $(stat -c %s "$IMAGE") bytes, Image.gz $(stat -c %s "$IMAGE_GZ") bytes"
