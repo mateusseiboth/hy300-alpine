@@ -10,6 +10,8 @@
 #   Alpine na boot: reboot normal. Alpine na recovery: scripts/reboot-to-test-slot.sh do
 #   hy300-rk3566 (registrador do reboot-mode, nunca o BCB), com TEST_IMAGE apontando para a
 #   recovery-alpine.img.
+#   Sem adb root (LineageOS do HY300), dispara o gatilho debug.hy300.alpine=1, e o próprio
+#   Lineage grava a marca e reinicia.
 # Variáveis: HY300_RK3566 (~/hy300-handoff/hy300-rk3566), HY300_RECOVERY_IMAGE
 #   (~/hy300-work/alpine/recovery-alpine.img), HY300_REBOOT_TO_TEST_SLOT (script do reboot).
 set -euo pipefail
@@ -37,7 +39,7 @@ parse_args() {
 		case "$1" in
 		--alpine-in) alpine_in="${2:-}"; shift ;;
 		--dry-run) dry_run=1 ;;
-		*) sed -n '2,15s/^# \{0,1\}//p' "$0"; exit 2 ;;
+		*) sed -n '2,17s/^# \{0,1\}//p' "$0"; exit 2 ;;
 		esac
 		shift
 	done
@@ -72,6 +74,19 @@ write_mark() {
 	[[ "$(read_mark_area)" == "$MARK_HEX" ]] || fail "FALHOU: a marca não conferiu depois de gravar"
 }
 
+is_adb_root() {
+	[[ "$(adb shell id -u | tr -d '\r')" == 0 ]]
+}
+
+# Sem adb root (userdebug do LineageOS, ro.debuggable=0): o serviço hy300-alpine do Lineage grava
+# a mesma marca e faz o reboot normal quando o shell seta debug.hy300.alpine=1.
+use_lineage_trigger() {
+	echo ">> sem adb root: usando o gatilho do LineageOS (debug.hy300.alpine=1)"
+	[[ -n "$dry_run" ]] && { echo "dry-run: gatilho não disparado"; return; }
+	adb shell setprop debug.hy300.alpine 1
+	echo ">> pedido feito; o Lineage grava a marca e reinicia (a conexão adb cai agora)"
+}
+
 reboot_to() {
 	[[ "$1" == boot ]] && { adb shell reboot; return; }
 	TEST_IMAGE="$RECOVERY_IMAGE" "$REBOOT_TO_TEST_SLOT"
@@ -82,6 +97,7 @@ main() {
 	adb root >/dev/null
 	sleep "${HY300_ADB_ROOT_WAIT:-3}"
 	adb wait-for-device
+	is_adb_root || { use_lineage_trigger; return; }
 	local place area
 	place="$(find_alpine)"
 	area="$(read_mark_area)"

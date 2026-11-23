@@ -447,6 +447,18 @@ dados em `0x0`-`0xfff`, BCB e dados A/B da Rockchip, e em `0x4000`, BCB legado):
   Ele grava a marca só se a área estiver zerada ou já com a marca, confere lendo de volta e
   reinicia: reboot normal se o Alpine estiver na `boot`, ou o `reboot-to-test-slot.sh` do
   hy300-rk3566 (registrador, sem BCB) se estiver na `recovery`.
+- **Com o LineageOS no ar** não há `adb root` (o userdebug do Lineage sai com
+  `ro.debuggable=0`), então o script não grava a `misc` ele mesmo: ao ver que o `adb root` não
+  pegou, ele dispara o gatilho do Lineage do HY300, que também funciona à mão:
+
+  ```bash
+  adb shell setprop debug.hy300.alpine 1
+  ```
+
+  Um serviço root do Lineage (só no userdebug e com o adbd no ar) grava a mesma marca em
+  `0x10000`, com a mesma regra (só sobre área zerada ou já marcada), e faz um reboot normal. O
+  Alpine sobe pela `boot` e fica. Se a área tiver outra coisa, o Lineage não reinicia e registra
+  em `/metadata/hy300-diag/alpine.txt`. Voltar ao Lineage: `hy300-android` no Alpine.
 - **Contador:** "pronto" é o autoboot começar (sysinit, watchdog e sshd no ar). Se o Alpine
   não chega lá em 3 boots seguidos, o estágio 1 zera o contador e vai uma vez para o Android.
   Panic, watchdog e travamento do Alpine voltam ao Alpine. Dados desconhecidos nessa área ficam

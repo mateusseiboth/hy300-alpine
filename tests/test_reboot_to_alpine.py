@@ -26,6 +26,8 @@ push) cp "$2" "$FAKE_DIR/data${3}"; exit $? ;;
 shell) shift
 	cmd="$*"
 	[ "$cmd" = reboot ] && { echo reboot >>"$FAKE_DIR/rebooted"; exit 0; }
+	[ "$cmd" = "id -u" ] && { echo "${FAKE_UID:-0}"; exit 0; }
+	case "$cmd" in setprop*) echo "$cmd" >>"$FAKE_DIR/rebooted"; exit 0 ;; esac
 	cmd="${cmd//\/dev\/block\/by-name/$FAKE_DIR/by-name}"
 	cmd="${cmd//\/data\/local\/tmp/$FAKE_DIR/data/data/local/tmp}"
 	sh -c "$cmd" ;;
@@ -74,8 +76,8 @@ class RebootToAlpineTest(unittest.TestCase):
         path = os.path.join(self.tmp, "rebooted")
         return open(path).read() if os.path.exists(path) else ""
 
-    def run_script(self, *args):
-        env = dict(os.environ, PATH=os.path.join(self.tmp, "bin") + ":" + os.environ["PATH"], FAKE_DIR=self.tmp, HY300_ADB_ROOT_WAIT="0",
+    def run_script(self, *args, uid="0"):
+        env = dict(os.environ, FAKE_UID=uid, PATH=os.path.join(self.tmp, "bin") + ":" + os.environ["PATH"], FAKE_DIR=self.tmp, HY300_ADB_ROOT_WAIT="0",
                    HY300_REBOOT_TO_TEST_SLOT=os.path.join(self.tmp, "bin", "slot"),
                    HY300_RECOVERY_IMAGE="/imagens/recovery-alpine.img")
         return subprocess.run(["bash", SCRIPT, *args], env=env, capture_output=True, text=True, timeout=60)
@@ -120,6 +122,20 @@ class RebootToAlpineTest(unittest.TestCase):
         r = self.run_script()
         self.assertNotEqual(r.returncode, 0)
         self.assertEqual(self.read_mark_area(), bytes(16))
+
+    def test_without_adb_root_uses_the_lineage_trigger(self):
+        # O userdebug do LineageOS sai com ro.debuggable=0: sem adb root não dá para gravar a
+        # misc, e o serviço do Lineage faz isso ao ver debug.hy300.alpine=1.
+        r = self.run_script(uid="2000")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.rebooted().strip(), "setprop debug.hy300.alpine 1")
+        self.assertEqual(self.read_mark_area(), bytes(16))
+        self.assertIn("gatilho do LineageOS", r.stdout)
+
+    def test_without_adb_root_dry_run_does_not_trigger(self):
+        r = self.run_script("--dry-run", uid="2000")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.rebooted(), "")
 
     def test_dry_run_writes_and_reboots_nothing(self):
         r = self.run_script("--dry-run")
