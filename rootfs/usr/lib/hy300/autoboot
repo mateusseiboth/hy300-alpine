@@ -1,6 +1,6 @@
 #!/bin/sh
 # Autoboot (inittab, ::once): conta alguns segundos na tela e vai para o Android, a menos que
-# alguém aperte uma tecla, que a cmdline peça para ficar, que exista /run/hy300/ficar ou um
+# alguém aperte uma tecla, que o boot anterior tenha terminado em panic, que a cmdline peça para ficar, que exista /run/hy300/ficar ou um
 # pendrive com o arquivo hy300-ficar. Ficando, passa para o script stay (rede, SSH e tela).
 : "${HY300_LIB:=/usr/lib/hy300}"
 . "$HY300_LIB/common.sh"
@@ -16,7 +16,8 @@ main() {
 	mark_alpine_ready
 	delay=$(read_autoboot_delay)
 	android=$(read_android_slot)
-	reason=$(read_stay_reason "$delay" "$android")
+	reason=$(consume_panic_record)
+	[ -n "$reason" ] || reason=$(read_stay_reason "$delay" "$android")
 	[ -n "$reason" ] && stay "$reason"
 	log_kmsg autoboot "contagem de $delay s; Android na partição $android"
 	result=$(run_countdown "$delay")

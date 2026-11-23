@@ -16,6 +16,7 @@
 : "${HY300_WAITKEY:=/usr/sbin/hy300-waitkey}"
 # Escrito pelo estágio 1 quando ele achou (e apagou) a marca de ficar na misc.
 : "${HY300_STAY_MARK_FILE:=/etc/hy300-stay}"
+: "${HY300_PSTORE:=/sys/fs/pstore}"
 AUTOBOOT_DELAY_DEFAULT=5
 STAY_FILE_NAME=hy300-ficar
 
@@ -37,6 +38,20 @@ read_stay_reason() {
 	[ "$1" = 0 ] && { echo "hy300.autoboot=0 na cmdline"; return; }
 	[ "$2" = desconhecido ] && { echo "partição do Android desconhecida (sem hy300.slot)"; return; }
 	return 0
+}
+
+# Panic no boot anterior (Android ou Alpine): o ramoops guardou o dmesg do panic. Copia os
+# registros para $HY300_RUN/pstore-anterior (para ler por SSH) e apaga o do panic do pstore,
+# senão todo boot seguinte ficaria no Alpine. Imprime o motivo de ficar; vazio sem panic.
+consume_panic_record() {
+	record=$(grep -l "Kernel panic" "$HY300_PSTORE"/dmesg-ramoops-* 2>/dev/null | head -n 1)
+	[ -n "$record" ] || return 0
+	saved=$HY300_RUN/pstore-anterior
+	mkdir -p "$saved"
+	cp "$HY300_PSTORE"/* "$saved"/ 2>/dev/null
+	message=$(grep -m 1 -o "Kernel panic - not syncing: .*" "$record" | sed "s/^Kernel panic - not syncing: //")
+	rm -f "$HY300_PSTORE"/dmesg-ramoops-*
+	echo "panic no boot anterior: ${message:-sem mensagem}"
 }
 
 # Pendrive com um arquivo hy300-ficar na raiz (qualquer partição, ou o disco sem partição).

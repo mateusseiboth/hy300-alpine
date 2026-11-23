@@ -32,7 +32,8 @@ class AutobootMixin(ShellMixin):
         env = {"HY300_CMDLINE": self.path("cmdline"), "HY300_SYSFS_BLOCK": self.path("sys"),
                "HY300_STAY_CMD": os.path.join(self.bin, "stay"),
                "HY300_STAY_MARK_FILE": self.path("sem-marca"), "HY300_BY_NAME": self.path("sem-misc"),
-               "HY300_WATCHDOG_DEV": self.path("sem-watchdog"), "HY300_WAITKEY": os.path.join(self.bin, "hy300-waitkey")}
+               "HY300_WATCHDOG_DEV": self.path("sem-watchdog"), "HY300_WAITKEY": os.path.join(self.bin, "hy300-waitkey"),
+               "HY300_PSTORE": self.path("pstore")}
         env.update(extra)
         return env
 
@@ -85,6 +86,46 @@ class AutobootMixin(ShellMixin):
         self.assertIn("stay marca na misc", log)
         self.assertFalse(any(line.startswith("hy300-waitkey") for line in log))
         self.assertIn("ficando no Alpine: marca na misc", self.kmsg())
+
+    def write_panic_record(self, name="dmesg-ramoops-0"):
+        self.write(f"pstore/{name}", "Panic#1 Part1\n<6>[    5.0] Booting Linux\n"
+                   "<0>[   65.802592] Kernel panic - not syncing: watchdog pretimeout event\n")
+        self.write("pstore/console-ramoops-0", "[    4.8] Linux version 6.1.172-hy300\n")
+
+    def test_panic_in_pstore_stays_without_countdown(self):
+        self.write_panic_record()
+        self.waitkey("tempo")
+        self.sh(f'sh "{AUTOBOOT}"', env=self.env("hy300.slot=boot hy300.autoboot=5"))
+        log = self.fake_log()
+        reason = "panic no boot anterior: watchdog pretimeout event"
+        self.assertIn(f"stay {reason}", log)
+        self.assertFalse(any(line.startswith(("hy300-waitkey", "hy300-reboot-recovery")) for line in log))
+        self.assertIn(f"ficando no Alpine: {reason}", self.kmsg())
+
+    def test_panic_record_is_saved_in_run_and_removed_from_pstore(self):
+        self.write_panic_record()
+        self.waitkey("tempo")
+        self.sh(f'sh "{AUTOBOOT}"', env=self.env("hy300.slot=boot"))
+        self.assertFalse(os.path.exists(self.path("pstore/dmesg-ramoops-0")), "o próximo boot não pode ficar de novo")
+        saved = self.path("run/pstore-anterior")
+        self.assertIn("Kernel panic", open(os.path.join(saved, "dmesg-ramoops-0")).read())
+        self.assertIn("Linux version", open(os.path.join(saved, "console-ramoops-0")).read())
+
+    def test_panic_record_is_consumed_even_with_the_misc_mark(self):
+        self.write_panic_record()
+        self.write("etc-hy300-stay", "marca na misc\n")
+        self.waitkey("tempo")
+        env = self.env("hy300.slot=boot")
+        env["HY300_STAY_MARK_FILE"] = self.path("etc-hy300-stay")
+        self.sh(f'sh "{AUTOBOOT}"', env=env)
+        self.assertFalse(os.path.exists(self.path("pstore/dmesg-ramoops-0")))
+        self.assertTrue(any(line.startswith("stay ") for line in self.fake_log()))
+
+    def test_oops_without_panic_still_boots_android(self):
+        self.write("pstore/dmesg-ramoops-0", "Oops#1 Part1\n<4>[ 30.0] WARNING: something\n")
+        self.waitkey("tempo")
+        self.sh(f'sh "{AUTOBOOT}"', env=self.env("hy300.slot=boot hy300.autoboot=2"))
+        self.assertIn("hy300-reboot-recovery ", self.fake_log())
 
     def test_late_stay_reason_from_run_file(self):
         self.write("run/ficar", "")

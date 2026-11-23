@@ -91,6 +91,13 @@ ou no fim dela: `hy300.autoboot=0` na cmdline (build com `AUTOBOOT=0`; `AUTOBOOT
 segundos), um pendrive com um arquivo `hy300-ficar` na raiz, `/run/hy300/ficar` criado durante a
 contagem, ou uma imagem sem `hy300.slot`.
 
+Se o boot anterior (Android ou Alpine) terminou em panic, o Alpine também fica, sem contagem: o
+ramoops guarda o dmesg do panic no pstore, o autoboot copia todos os registros para
+`/run/hy300/pstore-anterior/` (para ler por SSH) e apaga o do panic, então o boot seguinte volta
+ao normal. O motivo aparece no log, por exemplo
+`[autoboot] ficando no Alpine: panic no boot anterior: watchdog pretimeout event`. Sem isso, um
+Android que entra em panic no boot reiniciava no Alpine, que voltava ao Android, em laço.
+
 Ficando, o menu no tty1 (fonte Terminus 16x32, 64x18 caracteres):
 
 ```
