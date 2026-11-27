@@ -1,4 +1,4 @@
-# hy300-alpine 
+# hy300-alpine
 
 Alpine Linux (aarch64) como ambiente de recuperação e instalação do projetor HY300 (Rockchip
 RK3566, 1,5 GB de RAM), com o kernel 6.1 do HY300
@@ -432,8 +432,8 @@ dados em `0x0`-`0xfff`, BCB e dados A/B da Rockchip, e em `0x4000`, BCB legado):
 
 | Offset | Conteúdo | Quem grava | Quem apaga |
 |---|---|---|---|
-| `0x10000` | marca de ficar: `hy300-ficar ` + `01 00 00 00` | `scripts/reboot-to-alpine.sh` (pelo Android) ou `hy300-ficar` (no Alpine) | o estágio 1, antes de tudo |
-| `0x10010` | contador: `hy300-boots ` + contagem + 3 zeros (tudo zero é 0) | o estágio 1, +1 a cada boot | o autoboot, quando o Alpine fica pronto |
+| `0x10000` | marca de ficar: `hy300-ficar\0` + `01 00 00 00` | `scripts/reboot-to-alpine.sh` (pelo Android) ou `hy300-ficar` (no Alpine) | o estágio 1, antes de tudo |
+| `0x10010` | contador: `hy300-boots\0` + contagem + 3 zeros (tudo zero é 0) | o estágio 1, +1 a cada boot | o autoboot, quando o Alpine fica pronto |
 
 - **Marca:** com ela o Alpine fica no ar sem contagem (menu, Wi-Fi, SSH), registrando
   `ficando no Alpine: marca na misc`. Só o valor exato vale e ela é apagada antes de qualquer
