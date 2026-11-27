@@ -1,4 +1,4 @@
-# hy300-alpine
+# hy300-alpine 
 
 Alpine Linux (aarch64) como ambiente de recuperação e instalação do projetor HY300 (Rockchip
 RK3566, 1,5 GB de RAM), com o kernel 6.1 do HY300
